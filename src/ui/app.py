@@ -3,6 +3,7 @@
 
 Объединяет:
 - Панель выбора инструментов
+- Панель индикаторов
 - Интерактивный свечной график
 - Инструменты рисования
 - Панель запуска бэктеста и результатов
@@ -10,12 +11,14 @@
 
 from typing import Optional
 
+import numpy as np
 import pandas as pd
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtCore, QtGui, QtWidgets
 
 from src.backtester.engine import Бэктестер, РезультатБэктеста
 from src.data.data_loader import загрузить_инструмент, получить_доступные_инструменты
+from src.indicators.base import SMA, EMA, RSI, MACD, BollingerBands, Stochastic
 from src.ui.chart import График
 from src.ui.drawings import ИнструментыРисования
 from src.ui.instruments import ПанельИнструментов
@@ -176,6 +179,107 @@ class ПанельБэктеста(QtWidgets.QWidget):
         self.таблица_метрик.resizeColumnsToContents()
 
 
+class ПанельИндикаторов(QtWidgets.QWidget):
+    """
+    Панель управления индикаторами на графике.
+
+    Позволяет выбрать тип индикатора, настроить параметры
+    и добавить/удалить его с графика.
+    """
+
+    сигнал_добавить_индикатор = QtCore.pyqtSignal(str, int)
+    """Сигнал: (тип_индикатора, период)"""
+
+    сигнал_удалить_индикатор = QtCore.pyqtSignal(str)
+    """Сигнал: (название_индикатора)"""
+
+    ТИПЫ_ИНДИКАТОРОВ = [
+        "SMA",
+        "EMA",
+        "RSI",
+        "Bollinger Bands",
+    ]
+
+    def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
+        super().__init__(parent)
+
+        layout = QtWidgets.QHBoxLayout()
+        layout.setContentsMargins(5, 2, 5, 2)
+        self.setLayout(layout)
+
+        # Надпись "Индикаторы"
+        метка = QtWidgets.QLabel("Индикаторы:")
+        метка.setStyleSheet("font-weight: bold;")
+        layout.addWidget(метка)
+
+        # Выбор типа индикатора
+        self.выбор_типа = QtWidgets.QComboBox()
+        for тип in self.ТИПЫ_ИНДИКАТОРОВ:
+            self.выбор_типа.addItem(тип)
+        layout.addWidget(self.выбор_типа)
+
+        # Период
+        layout.addWidget(QtWidgets.QLabel("Период:"))
+        self.поле_периода = QtWidgets.QSpinBox()
+        self.поле_периода.setMinimum(2)
+        self.поле_периода.setMaximum(200)
+        self.поле_периода.setValue(14)
+        layout.addWidget(self.поле_периода)
+
+        # Кнопка "Добавить"
+        self.кнопка_добавить = QtWidgets.QPushButton("+")
+        self.кнопка_добавить.setMaximumWidth(30)
+        self.кнопка_добавить.setStyleSheet(
+            "background-color: #2d7d2d; color: white; font-weight: bold;"
+        )
+        layout.addWidget(self.кнопка_добавить)
+
+        # Список активных индикаторов
+        self.список_активных = QtWidgets.QListWidget()
+        self.список_активных.setMaximumWidth(200)
+        self.список_активных.setMaximumHeight(50)
+        layout.addWidget(self.список_активных)
+
+        # Кнопка "Удалить"
+        self.кнопка_удалить = QtWidgets.QPushButton("✕")
+        self.кнопка_удалить.setMaximumWidth(30)
+        self.кнопка_удалить.setStyleSheet(
+            "background-color: #8b0000; color: white; font-weight: bold;"
+        )
+        layout.addWidget(self.кнопка_удалить)
+
+        layout.addStretch()
+
+        self.кнопка_добавить.clicked.connect(self._on_добавить)
+        self.кнопка_удалить.clicked.connect(self._on_удалить)
+
+    def _on_добавить(self) -> None:
+        """Обработчик добавления индикатора."""
+        тип = self.выбор_типа.currentText()
+        период = self.поле_периода.value()
+        self.сигнал_добавить_индикатор.emit(тип, период)
+
+    def _on_удалить(self) -> None:
+        """Обработчик удаления индикатора."""
+        выбранные = self.список_активных.selectedItems()
+        for элемент in выбранные:
+            self.сигнал_удалить_индикатор.emit(элемент.text())
+
+    def добавить_в_активные(self, название: str) -> None:
+        """Добавляет индикатор в список активных."""
+        for i in range(self.список_активных.count()):
+            if self.список_активных.item(i).text() == название:
+                return
+        self.список_активных.addItem(название)
+
+    def удалить_из_активных(self, название: str) -> None:
+        """Удаляет индикатор из списка активных."""
+        for i in range(self.список_активных.count()):
+            if self.список_активных.item(i).text() == название:
+                self.список_активных.takeItem(i)
+                break
+
+
 class ГлавноеОкно(QtWidgets.QMainWindow):
     """
     Главное окно приложения.
@@ -205,6 +309,10 @@ class ГлавноеОкно(QtWidgets.QMainWindow):
         self.панель_инструментов = ПанельИнструментов()
         левая_layout.addWidget(self.панель_инструментов)
 
+        # Панель индикаторов
+        self.панель_индикаторов = ПанельИндикаторов()
+        левая_layout.addWidget(self.панель_индикаторов)
+
         # График (центр)
         self.график = График()
         левая_layout.addWidget(self.график, stretch=1)
@@ -212,6 +320,11 @@ class ГлавноеОкно(QtWidgets.QMainWindow):
 
         # Инструменты рисования
         self.рисование = ИнструментыРисования(self.график)
+
+        # Словарь индикаторов на графике: {название: PlotDataItem}
+        self._индикаторы_на_графике: dict[str, pg.PlotDataItem] = {}
+        # Словарь загруженных данных: {код: DataFrame}
+        self._данные_инструментов: dict[str, pd.DataFrame] = {}
 
         # Правая часть: панель бэктеста
         self.панель_бэктеста = ПанельБэктеста()
@@ -266,6 +379,12 @@ class ГлавноеОкно(QtWidgets.QMainWindow):
         self.панель_бэктеста.кнопка_запустить.clicked.connect(
             self._на_запуск_бэктеста
         )
+        self.панель_индикаторов.сигнал_добавить_индикатор.connect(
+            self._на_добавление_индикатора
+        )
+        self.панель_индикаторов.сигнал_удалить_индикатор.connect(
+            self._на_удаление_индикатора
+        )
 
     def _на_добавление_инструмента(
         self, код: str, таймфрейм: str
@@ -289,6 +408,7 @@ class ГлавноеОкно(QtWidgets.QMainWindow):
             успех = self.график.добавить_инструмент(код, данные, таймфрейм)
             if успех:
                 self.панель_инструментов.добавить_в_активные(код)
+                self._данные_инструментов[код] = данные
                 self.statusBar().showMessage(
                     f"Добавлен {код} ({таймфрейм}), "
                     f"свечей: {len(данные)}"
@@ -305,6 +425,11 @@ class ГлавноеОкно(QtWidgets.QMainWindow):
         успех = self.график.удалить_инструмент(код)
         if успех:
             self.панель_инструментов.удалить_из_активных(код)
+            self._данные_инструментов.pop(код, None)
+            # Очищаем индикаторы при смене инструмента
+            for название in list(self._индикаторы_на_графике.keys()):
+                self.график.removeItem(self._индикаторы_на_графике.pop(название))
+            self.панель_индикаторов.список_активных.clear()
             self.statusBar().showMessage(f"Удалён {код} с графика")
 
     def _на_изменение_таймфрейма(self, таймфрейм: str) -> None:
@@ -319,6 +444,12 @@ class ГлавноеОкно(QtWidgets.QMainWindow):
 
         for код in активные:
             self.график.удалить_инструмент(код)
+            self._данные_инструментов.pop(код, None)
+
+        # Очищаем индикаторы
+        for название in list(self._индикаторы_на_графике.keys()):
+            self.график.removeItem(self._индикаторы_на_графике.pop(название))
+        self.панель_индикаторов.список_активных.clear()
 
         for код in активные:
             self._на_добавление_инструмента(код, таймфрейм)
@@ -370,6 +501,137 @@ class ГлавноеОкно(QtWidgets.QMainWindow):
             )
         except Exception as e:
             self.statusBar().showMessage(f"Ошибка бэктеста: {e}")
+
+    def _на_добавление_индикатора(self, тип: str, период: int) -> None:
+        """Обработчик добавления индикатора на график."""
+        активные = self.график.список_инструментов
+        if not активные:
+            self.statusBar().showMessage(
+                "Сначала добавьте инструмент на график"
+            )
+            return
+
+        код = активные[0]
+        данные = self._данные_инструментов.get(код)
+        if данные is None:
+            self.statusBar().showMessage(
+                f"Нет данных для расчёта индикатора"
+            )
+            return
+
+        название = f"{тип}({период})"
+        if название in self._индикаторы_на_графике:
+            self.statusBar().showMessage(
+                f"Индикатор {название} уже добавлен"
+            )
+            return
+
+        try:
+            if тип == "SMA":
+                индикатор = SMA(период)
+                значения = индикатор.рассчитать(данные["close"])
+            elif тип == "EMA":
+                индикатор = EMA(период)
+                значения = индикатор.рассчитать(данные["close"])
+            elif тип == "RSI":
+                индикатор = RSI(период)
+                значения = индикатор.рассчитать(данные["close"])
+            elif тип == "Bollinger Bands":
+                индикатор = BollingerBands(период)
+                bb = индикатор.рассчитать(данные["close"])
+                # Рисуем среднюю, верхнюю и нижнюю полосы
+                for имя_полосы, цвет in [
+                    ("средняя", (255, 255, 0)),
+                    ("верхняя", (255, 150, 50)),
+                    ("нижняя", (255, 150, 50)),
+                ]:
+                    полоса_название = f"BB({период})_{имя_полосы}"
+                    if имя_полосы in ("верхняя", "нижняя"):
+                        стиль = QtCore.Qt.PenStyle.DashLine
+                    else:
+                        стиль = QtCore.Qt.PenStyle.SolidLine
+                    self._нарисовать_индикатор(
+                        полоса_название, bb[имя_полосы], данные, цвет, стиль
+                    )
+                self.панель_индикаторов.добавить_в_активные(название)
+                self.statusBar().showMessage(
+                    f"Добавлен {название}"
+                )
+                self.график.автомасштаб()
+                return
+            else:
+                self.statusBar().showMessage(
+                    f"Неизвестный тип индикатора: {тип}"
+                )
+                return
+
+            self._нарисовать_индикатор(
+                название, значения, данные
+            )
+            self.панель_индикаторов.добавить_в_активные(название)
+            self.statusBar().showMessage(f"Добавлен {название}")
+            self.график.автомасштаб()
+
+        except Exception as e:
+            self.statusBar().showMessage(f"Ошибка индикатора: {e}")
+
+    def _нарисовать_индикатор(
+        self,
+        название: str,
+        значения: pd.Series,
+        данные: pd.DataFrame,
+        цвет: tuple = (255, 255, 100),
+        стиль: QtCore.Qt.PenStyle = QtCore.Qt.PenStyle.SolidLine,
+    ) -> None:
+        """
+        Рисует линию индикатора на графике.
+
+        Параметры
+        ----------
+        название : str
+            Уникальное имя линии.
+        значения : pd.Series
+            Значения индикатора.
+        данные : pd.DataFrame
+            Исходные данные (для временных меток).
+        цвет : tuple
+            RGB-цвет линии.
+        стиль : QtCore.Qt.PenStyle
+            Стиль линии.
+        """
+        if название in self._индикаторы_на_графике:
+            self.график.removeItem(self._индикаторы_на_графике[название])
+
+        времена = np.array([
+            t.timestamp() for t in значения.index
+        ], dtype=float)
+        значения_массив = значения.values.astype(float)
+
+        # Убираем NaN
+        маска = ~np.isnan(значения_массив)
+        времена = времена[маска]
+        значения_массив = значения_массив[маска]
+
+        линия = pg.PlotDataItem(
+            времена,
+            значения_массив,
+            pen=pg.mkPen(цвет, width=1.5, style=стиль),
+            name=название,
+        )
+        self.график.addItem(линия)
+        self._индикаторы_на_графике[название] = линия
+
+    def _на_удаление_индикатора(self, название: str) -> None:
+        """Обработчик удаления индикатора с графика."""
+        # Удаляем BB полосы если это BB индикатор
+        for ключ in list(self._индикаторы_на_графике.keys()):
+            if ключ.startswith(название.replace(")", "_")):
+                self.график.removeItem(self._индикаторы_на_графике.pop(ключ))
+
+        if название in self._индикаторы_на_графике:
+            self.график.removeItem(self._индикаторы_на_графике.pop(название))
+            self.панель_индикаторов.удалить_из_активных(название)
+            self.statusBar().showMessage(f"Удалён {название} с графика")
 
     def _отобразить_эквити(
         self, результат: РезультатБэктеста, код: str
