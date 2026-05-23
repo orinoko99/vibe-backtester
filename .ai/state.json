@@ -1,0 +1,28 @@
+{
+  "current_task": "Этап 4 завершён",
+  "plan": [
+    "4.2 — Реализовать свечной график",
+    "4.3 — Интерактивность",
+    "4.4 — Volume Profile",
+    "4.5 — Рисование на графике",
+    "4.6 — Тесты"
+  ],
+  "step_index": 4,
+  "mode": "PLANNER",
+  "status": "completed",
+  "attempts": 0,
+  "tests": {
+    "written": true,
+    "last_result": "pass"
+  },
+  "review": {
+    "done": true
+  },
+  "logging": {
+    "bugs_recorded": true,
+    "fixes_recorded": true
+  },
+  "git": {
+    "committed": false
+  }
+}
