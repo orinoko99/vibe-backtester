@@ -1,13 +1,11 @@
 {
-  "current_task": "Этап 4 завершён",
+  "current_task": "Этап 6 завершён",
   "plan": [
-    "4.2 — Реализовать свечной график",
-    "4.3 — Интерактивность",
-    "4.4 — Volume Profile",
-    "4.5 — Рисование на графике",
-    "4.6 — Тесты"
+    "6.1 — Реализовать базовые индикаторы",
+    "6.2 — Возможность добавления индикаторов на график",
+    "6.3 — Тесты индикаторов"
   ],
-  "step_index": 4,
+  "step_index": 2,
   "mode": "PLANNER",
   "status": "completed",
   "attempts": 0,
@@ -23,6 +21,7 @@
     "fixes_recorded": true
   },
   "git": {
-    "committed": false
+    "committed": true,
+    "pushed": true
   }
 }
