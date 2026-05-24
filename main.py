@@ -5,36 +5,13 @@
 Создаёт главное окно PySide6 и запускает цикл обработки событий.
 """
 
+from __future__ import annotations
+
 import sys
 
-from PySide6.QtWidgets import QApplication, QMainWindow, QLabel
-from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication
 
-
-class MainWindow(QMainWindow):
-    """
-    Главное окно приложения-бэктестера.
-    Пока что содержит заглушку, в дальнейшем будет заменено
-    полноценным интерфейсом с графиками и панелями управления.
-    """
-
-    def __init__(self) -> None:
-        """
-        Инициализация главного окна:
-        - устанавливается заголовок
-        - задаётся начальный размер
-        - размещается приветственная метка
-        """
-        super().__init__(None)
-
-        # Настройка окна
-        self.setWindowTitle("Backtester v0.1")
-        self.resize(1280, 800)
-
-        # Центральная метка-заглушка
-        label = QLabel("Добро пожаловать в Backtester!\nЗагрузка данных и графиков...")
-        label.setAlignment(Qt.AlignCenter)
-        self.setCentralWidget(label)
+from src.gui.main_window import MainWindow
 
 
 def main() -> None:

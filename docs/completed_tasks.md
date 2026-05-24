@@ -20,6 +20,11 @@
   - Создан `src/data/database.py`: DatabaseManager, поиск инструментов, загрузка свечей
   - Написаны и пройдены тесты (`tests/test_database.py` — 23 теста)
 
-- [x] **Этап 2.3** — Модуль data/loader.py — 2026-05-24
+- [x] **Этап 2.3** — Модуль data/loader.py — 2026-05-24 — commit aa74340
+
+- [x] **Этап 3.1** — GUI: главное окно PySide6 — 2026-05-24
+  - Создан `src/gui/main_window.py` с меню, тулбаром, док-панелями, статус-баром
+  - Обновлён `main.py` — импорт из `src.gui.main_window`
+  - Написаны тесты (`tests/test_main.py` — 12 тестов)
   - Создан `src/data/loader.py`: DataLoader с паддингом, shift/zoom, кэшированием
   - Написаны и пройдены тесты (`tests/test_loader.py` — 22 теста)

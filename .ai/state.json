@@ -1,10 +1,11 @@
 {
-  "current_task": "Этап 2.3 — Модуль data/loader.py",
+  "current_task": "Этап 3.1 — GUI: главное окно PySide6",
   "plan": [
-    "Создать src/data/loader.py — динамическая загрузка с пагинацией",
-    "Написать тесты для loader.py"
+    "Создать src/gui/main_window.py — полноценное главное окно с размещением",
+    "Подключить MainWindow в main.py",
+    "Написать тесты для main_window.py"
   ],
-  "step_index": 1,
+  "step_index": 2,
   "mode": "LOGGER",
   "status": "done",
   "attempts": 0,
