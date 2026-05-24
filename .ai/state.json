@@ -1,9 +1,15 @@
 {
-  "current_task": "Этап 6 полностью завершён",
-  "plan": [],
-  "step_index": 0,
-  "mode": "PLANNER",
-  "status": "completed",
+  "current_task": "Этап 1.1 — Инициализация проекта",
+  "plan": [
+    "Проверить/установить зависимости в venv",
+    "Создать main.py — точка входа",
+    "Создать run_backtester.bat — bat-файл запуска",
+    "Создать README.md",
+    "Написать тест запуска приложения"
+  ],
+  "step_index": 4,
+  "mode": "LOGGER",
+  "status": "done",
   "attempts": 0,
   "tests": {
     "written": true,
@@ -17,7 +23,7 @@
     "fixes_recorded": true
   },
   "git": {
-    "committed": true,
-    "pushed": true
+    "committed": false,
+    "pushed": false
   }
 }

@@ -1,84 +1,56 @@
-# Vibe Backtester
+# Backtester
 
-Бэктестер торговых стратегий с интерактивными графиками и поддержкой портфелей инструментов.
+Desktop-приложение для бэктестинга торговых стратегий с интерактивными графиками.
 
-## Возможности
+## Стек технологий
 
-- **Загрузка данных** — чтение минутных свечей из SQLite баз QUIK (фьючерсы и акции)
-- **Бэктестинг** — прогон стратегий на исторических данных с расчётом метрик (доходность, Шарп, просадка, win rate)
-- **Портфели** — тестирование нескольких инструментов одновременно с распределением капитала
-- **Интерактивный график** — свечной график с зумом/паном, поддержка нескольких инструментов, Volume Profile
-- **Рисование** — горизонтальные/вертикальные/трендовые линии, прямоугольники, текстовые метки
-- **Индикаторы** — SMA, EMA, RSI, Bollinger Bands (отображение на графике)
-- **Стратегии** — SMA crossover, возможность создания собственных стратегий через наследование
+- **Python 3.14+**
+- **GUI:** PySide6 (Qt6)
+- **Графики:** lightweight-charts (TradingView-style)
+- **Обработка данных:** Polars + Pandas
+- **Бэктестинг:** VectorBT (open-source)
+- **Хранилище:** SQLite
 
-## Установка
+## Установка и запуск
+
+### Предварительные требования
+
+- Python 3.14 или выше
+- Виртуальное окружение (venv)
+
+### Установка зависимостей
 
 ```bash
-# Клонировать репозиторий
-git clone https://github.com/orinoko99/vibe-backtester.git
-cd vibe-backtester
-
-# Создать виртуальное окружение
 python -m venv venv
-venv\Scripts\activate  # Windows
-
-# Установить зависимости
-pip install -r requirements.txt
+venv\Scripts\pip install -r requirements.txt
 ```
 
-## Запуск
+### Запуск
 
-```bash
-python src/main.py
+Через bat-файл:
+```
+run_backtester.bat
+```
+
+Или напрямую:
+```
+venv\Scripts\python main.py
 ```
 
 ## Структура проекта
 
 ```
-src/
-├── main.py              # точка входа
-├── data/
-│   ├── db_connector.py  # подключение к SQLite БД
-│   └── data_loader.py   # загрузка и ресемплинг свечных данных
-├── backtester/
-│   ├── strategy.py      # базовый класс стратегии
-│   ├── engine.py        # ядро бэктестера
-│   └── portfolio.py     # тестирование портфелей
-├── indicators/
-│   └── base.py          # SMA, EMA, RSI, MACD, BB, Stochastic
-├── ui/
-│   ├── app.py           # главное окно
-│   ├── chart.py         # свечной график
-│   ├── drawings.py      # инструменты рисования
-│   └── instruments.py   # выбор инструментов/таймфрейма
-└── utils/
-    └── helpers.py       # вспомогательные функции
+src/               # Исходный код
+  gui/             # Компоненты графического интерфейса
+  data/            # Загрузка и кэширование рыночных данных
+  backtesting/     # Движок бэктестинга
+  utils/           # Вспомогательные утилиты
+tests/             # Тесты pytest
+docs/              # Документация и roadmap
 ```
 
-## Тестирование
+## Данные
 
-```bash
-pytest tests/ -v
-```
-
-Всего 122 теста покрывают модули данных, бэктестера, индикаторов и UI.
-
-## Источники данных
-
-Проект использует минутные свечные данные из SQLite баз данных QUIK:
-- `allCandlesFutures.db`, `allCandlesFutures_2020.db`, `allCandlesFutures_2023.db`
-- `allCandlesShares.db`, `allCandlesShares_2023.db`
-
-Структура таблиц: `{SecCode}_M1` с колонками Date, O, H, L, C, V, OpenInterest.
-
-## Технологии
-
-- Python 3.14
-- PyQt6, pyqtgraph — GUI и интерактивные графики
-- pandas, numpy — обработка данных
-- pytest — тестирование
-
-## Лицензия
-
-MIT
+Используются SQLite-базы с минутными свечами:
+- Фьючерсы: `allCandlesFutures.db`, `allCandlesFutures_2020.db`, `allCandlesFutures_2023.db`
+- Акции: `allCandlesShares.db`, `allCandlesShares_2023.db`

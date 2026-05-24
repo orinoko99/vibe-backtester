@@ -1,46 +1,55 @@
-# Структура проекта vibe-backtester
+# Структура проекта backtester
 
 ```
-vibe-backtester/
-├── .ai/
-│   ├── state.json          # состояние агента
-│   └── tests.json          # информация о тестах
-├── docs/
-│   ├── ai_prompt           # инструкции для ИИ (только чтение)
-│   ├── project.md          # описание проекта
-│   ├── project_structure.md # структура проекта
-│   ├── roadmap.md          # план разработки
-│   ├── completed_tasks.md  # трекер прогресса
-│   ├── error_log.md        # лог ошибок
-│   └── tests_description.md # описание тестов
+backtester/
+├── main.py                          # Точка входа в приложение
+├── run_backtester.bat               # BAT-файл для запуска
+├── .gitignore
+├── README.md                        # Описание проекта
+│
 ├── src/
 │   ├── __init__.py
-│   ├── main.py             # точка входа
+│   ├── gui/
+│   │   ├── __init__.py
+│   │   ├── main_window.py           # Главное окно PySide6
+│   │   ├── chart_widget.py          # График (lightweight-charts-python)
+│   │   ├── instrument_panel.py      # Панель выбора инструментов/таймфреймов
+│   │   └── indicators_panel.py      # Панель добавления индикаторов
+│   │
 │   ├── data/
 │   │   ├── __init__.py
-│   │   ├── db_connector.py # подключение к SQLite БД
-│   │   └── data_loader.py  # загрузка свечных данных
-│   ├── backtester/
+│   │   ├── database.py              # Подключение к SQLite (sqlite3/SQLAlchemy)
+│   │   ├── loader.py                # Загрузка свечных данных (с пагинацией)
+│   │   ├── cache.py                 # Кэширование в Parquet (опционально)
+│   │   └── models.py                # Pydantic-модели данных
+│   │
+│   ├── backtesting/
 │   │   ├── __init__.py
-│   │   ├── engine.py       # ядро бэктестера
-│   │   ├── portfolio.py    # тестирование портфелей
-│   │   └── strategy.py     # базовый класс стратегии
-│   ├── indicators/
-│   │   ├── __init__.py
-│   │   └── base.py         # базовые индикаторы
-│   ├── ui/
-│   │   ├── __init__.py
-│   │   ├── app.py          # GUI приложение
-│   │   ├── chart.py        # интерактивный график
-│   │   ├── instruments.py  # выбор инструментов
-│   │   └── drawings.py     # рисование на графике
+│   │   ├── engine.py                # Ядро бэктестера (VectorBT)
+│   │   ├── strategy.py              # Базовый класс стратегии
+│   │   └── portfolio.py             # Портфельное тестирование
+│   │
 │   └── utils/
 │       ├── __init__.py
-│       └── helpers.py      # вспомогательные функции
+│       └── config.py                # Конфигурация путей и параметров
+│
 ├── tests/
 │   ├── __init__.py
-│   └── test_data.py
-├── README.md
-├── .gitignore
-└── requirements.txt
+│   ├── test_database.py
+│   ├── test_loader.py
+│   ├── test_strategy.py
+│   └── test_chart_widget.py
+│
+├── docs/
+│   ├── ai_prompt                     # Инструкции для AI
+│   ├── project.md                   # Описание проекта
+│   ├── project_structure.md         # Структура (этот файл)
+│   ├── roadmap.md                   # План разработки
+│   ├── completed_tasks.md           # Трекер прогресса
+│   ├── error_log.md                 # Журнал ошибок
+│   └── tests_description.md         # Описание тестов
+│
+└── .ai/
+    ├── state.json                   # Состояние агента
+    └── tests.json                   # Результаты тестов
 ```
