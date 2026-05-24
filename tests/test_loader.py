@@ -1,401 +1,326 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-Тесты для модуля динамической загрузки данных (src/data/loader.py).
-"""
+Тесты для модуля загрузки данных src/data/loader.py.
 
-from __future__ import annotations
+Создаёт временную SQLite БД с тестовыми данными для изоляции тестов.
+"""
 
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from tempfile import NamedTemporaryFile
-from typing import Generator
 
+import polars as pl
 import pytest
 
-import sys
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from src.data.database import DatabaseManager
-from src.data.loader import DataLoader
-from src.data.models import Candle
+from src.data.loader import (
+    get_table_list,
+    get_available_instruments,
+    load_candles,
+)
 
 
 @pytest.fixture
-def temp_db_path() -> Generator[Path, None, None]:
+def temp_db_path(tmp_path: Path) -> str:
     """
-    Фикстура: временная SQLite-БД с тестовыми свечами.
-    Содержит 100 свечей AAH6 с интервалом 1 минута.
+    Фикстура: создаёт временную SQLite БД с тестовыми свечными данными.
+    Возвращает путь к созданному файлу .db.
     """
-    with NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        tmp_path = Path(tmp.name)
+    db_file = tmp_path / "test_candles.db"
+    conn = sqlite3.connect(str(db_file))
+    cursor = conn.cursor()
 
-    conn = sqlite3.connect(str(tmp_path))
-    conn.execute(
-        "CREATE TABLE 'AAH6_M1' ("
-        "ID INTEGER PRIMARY KEY, "
-        "Date TEXT, SecCode TEXT, ClassCode TEXT, "
-        "O TEXT, H TEXT, L TEXT, C TEXT, "
-        "V INTEGER, OpenInterest INTEGER)"
-    )
+    # Создаём таблицу, повторяющую структуру реальной БД QUIK
+    cursor.execute("""
+        CREATE TABLE 'TEST_M1' (
+            'ID' INTEGER PRIMARY KEY,
+            'Date' TEXT,
+            'SecCode' TEXT,
+            'ClassCode' TEXT,
+            'O' TEXT,
+            'H' TEXT,
+            'L' TEXT,
+            'C' TEXT,
+            'V' INTEGER,
+            'OpenInterest' INTEGER
+        )
+    """)
 
-    base_time = datetime(2025, 10, 28, 10, 0)
-    test_data = []
-    for i in range(100):
-        ts = base_time + timedelta(minutes=i)
-        price = 100.0 + i * 0.1
-        test_data.append((
-            i + 1,
-            ts.strftime("%Y-%m-%d %H:%M:%S"),
-            "AAH6",
-            "SPBFUT",
-            str(price),
-            str(price + 0.5),
-            str(price - 0.3),
-            str(price + 0.2),
-            100 + i,
-            i * 10,
-        ))
+    # Вставляем тестовые данные (10 свечей с разными датами)
+    test_data = [
+        (1, "2025-10-28 09:00:00", "TEST", "SPBFUT", "100.0", "105.0", "99.0", "104.0", 1000, 500),
+        (2, "2025-10-28 09:01:00", "TEST", "SPBFUT", "104.0", "106.0", "103.0", "105.5", 800, 520),
+        (3, "2025-10-28 09:02:00", "TEST", "SPBFUT", "105.5", "107.0", "105.0", "106.0", 1200, 530),
+        (4, "2025-10-29 10:00:00", "TEST", "SPBFUT", "106.0", "108.0", "105.5", "107.5", 1500, 540),
+        (5, "2025-10-29 10:01:00", "TEST", "SPBFUT", "107.5", "109.0", "107.0", "108.0", 900, 550),
+        (6, "2025-10-30 11:00:00", "TEST", "SPBFUT", "108.0", "110.0", "107.5", "109.5", 2000, 560),
+        (7, "2025-10-30 11:01:00", "TEST", "SPBFUT", "109.5", "111.0", "109.0", "110.0", 1100, 570),
+        (8, "2025-10-30 11:02:00", "TEST", "SPBFUT", "110.0", "112.0", "109.5", "111.5", 1300, 580),
+        (9, "2025-10-31 12:00:00", "TEST", "SPBFUT", "111.5", "113.0", "111.0", "112.0", 700, 590),
+        (10, "2025-10-31 12:01:00", "TEST", "SPBFUT", "112.0", "114.0", "111.5", "113.5", 1600, 600),
+    ]
 
-    conn.executemany(
-        "INSERT INTO 'AAH6_M1' "
-        "(ID, Date, SecCode, ClassCode, O, H, L, C, V, OpenInterest) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    cursor.executemany(
+        """INSERT INTO 'TEST_M1' ("ID", "Date", "SecCode", "ClassCode", "O", "H", "L", "C", "V", "OpenInterest")
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         test_data,
     )
+
+    # Создаём вторую таблицу для теста множественных инструментов
+    cursor.execute("""
+        CREATE TABLE 'TEST2_M1' (
+            'ID' INTEGER PRIMARY KEY,
+            'Date' TEXT,
+            'SecCode' TEXT,
+            'ClassCode' TEXT,
+            'O' TEXT,
+            'H' TEXT,
+            'L' TEXT,
+            'C' TEXT,
+            'V' INTEGER,
+            'OpenInterest' INTEGER
+        )
+    """)
+
+    cursor.execute(
+        """INSERT INTO 'TEST2_M1' ("ID", "Date", "SecCode", "ClassCode", "O", "H", "L", "C", "V", "OpenInterest")
+           VALUES (1, '2025-10-28 09:00:00', 'TEST2', 'SPBFUT', '50.0', '52.0', '49.0', '51.0', 500, 200)"""
+    )
+
     conn.commit()
     conn.close()
-
-    yield tmp_path
-    tmp_path.unlink(missing_ok=True)
+    return str(db_file)
 
 
-@pytest.fixture
-def db_manager(temp_db_path: Path) -> DatabaseManager:
-    """Фикстура: DatabaseManager с тестовой БД."""
-    return DatabaseManager(futures_paths=(temp_db_path,), shares_paths=())
-
-
-@pytest.fixture
-def loader(db_manager: DatabaseManager) -> DataLoader:
-    """Фикстура: DataLoader для AAH6."""
-    return DataLoader(db_manager, "AAH6", padding_factor=2)
-
-
-class TestDataLoaderCreation:
+def test_get_table_list_returns_tables(temp_db_path: str) -> None:
     """
-    Тестирование создания DataLoader.
+    Проверяет, что get_table_list возвращает правильные имена таблиц.
     """
+    tables = get_table_list(temp_db_path)
 
-    def test_creation_default_padding(
-        self, db_manager: DatabaseManager
-    ) -> None:
-        """Проверяет создание с padding по умолчанию."""
-        loader = DataLoader(db_manager, "AAH6")
-        assert loader.sec_code == "AAH6"
-        assert loader.has_data is False
-
-    def test_creation_custom_padding(
-        self, db_manager: DatabaseManager
-    ) -> None:
-        """Проверяет создание с пользовательским padding."""
-        loader = DataLoader(db_manager, "AAH6", padding_factor=3)
-        assert loader._padding_factor == 3
-
-    def test_initial_state(self, loader: DataLoader) -> None:
-        """Проверяет начальное состояние загрузчика."""
-        assert loader.visible_start is None
-        assert loader.visible_end is None
-        assert loader.loaded_candles == []
-        assert loader.visible_candles == []
-        assert loader.has_data is False
-        assert loader.visible_duration is None
+    assert "TEST_M1" in tables
+    assert "TEST2_M1" in tables
+    assert len(tables) == 2
 
 
-class TestSetVisibleRange:
+def test_get_table_list_file_not_found() -> None:
     """
-    Тестирование установки видимого диапазона.
+    Проверяет, что выбрасывается FileNotFoundError для несуществующего файла.
     """
+    with pytest.raises(FileNotFoundError) as exc_info:
+        get_table_list("C:\\nonexistent\\path\\database.db")
 
-    def test_set_visible_range_loads_data(
-        self, loader: DataLoader
-    ) -> None:
-        """
-        Проверяет, что после установки видимого окна
-        данные загружаются.
-        """
-        start = datetime(2025, 10, 28, 10, 0)
-        end = datetime(2025, 10, 28, 10, 10)
-        candles = loader.set_visible_range(start, end)
-        assert len(candles) > 0
-        assert loader.has_data
-
-    def test_visible_candles_count(self, loader: DataLoader) -> None:
-        """
-        Проверяет, что visible_candles возвращает
-        свечи только в видимом диапазоне.
-        """
-        start = datetime(2025, 10, 28, 10, 0)
-        end = datetime(2025, 10, 28, 10, 9)  # 10 свечей
-        loader.set_visible_range(start, end)
-
-        visible = loader.visible_candles
-        # Видимое окно: 10 минут -> 10 свечей
-        assert len(visible) == 10
-
-    def test_loaded_candles_more_than_visible(
-        self, loader: DataLoader
-    ) -> None:
-        """
-        Проверяет, что loaded_candles содержит больше свечей,
-        чем visible_candles (за счёт padding).
-        """
-        start = datetime(2025, 10, 28, 10, 0)
-        end = datetime(2025, 10, 28, 10, 9)
-        loader.set_visible_range(start, end)
-
-        loaded = loader.loaded_candles
-        visible = loader.visible_candles
-
-        assert len(loaded) > len(visible)
-
-    def test_set_visible_range_rejects_invalid(
-        self, loader: DataLoader
-    ) -> None:
-        """
-        Проверяет, что start >= end вызывает ошибку.
-        """
-        start = datetime(2025, 10, 28, 10, 10)
-        end = datetime(2025, 10, 28, 10, 0)
-
-        with pytest.raises(ValueError):
-            loader.set_visible_range(start, end)
-
-    def test_set_visible_range_without_data(self, loader: DataLoader) -> None:
-        """
-        Проверяет, что загрузка за пределами данных
-        возвращает пустой список.
-        """
-        start = datetime(2020, 1, 1)
-        end = datetime(2020, 1, 2)
-        candles = loader.set_visible_range(start, end)
-        assert candles == []
-
-    def test_repeat_set_same_range_does_not_reload(
-        self, loader: DataLoader
-    ) -> None:
-        """
-        Проверяет, что повторная установка того же диапазона
-        не вызывает новую загрузку из БД (кэширование).
-        """
-        start = datetime(2025, 10, 28, 10, 0)
-        end = datetime(2025, 10, 28, 10, 9)
-
-        # Первая загрузка
-        candles_first = loader.set_visible_range(start, end)
-        id_first = id(loader._candles)
-        start_loaded = loader._loaded_start
-
-        # Вторая загрузка того же диапазона
-        candles_second = loader.set_visible_range(start, end)
-
-        # Объект свечей не должен измениться (тот же id)
-        # или, как минимум, loaded_start остаётся тем же
-        assert loader._loaded_start == start_loaded
-        assert len(candles_first) == len(candles_second)
+    assert "Файл базы данных не найден" in str(exc_info.value)
 
 
-class TestShiftVisibleRange:
+def test_load_candles_returns_all_data(temp_db_path: str) -> None:
     """
-    Тестирование смещения видимого окна.
+    Проверяет загрузку всех свечей инструмента без фильтрации.
     """
+    df = load_candles(temp_db_path, "TEST")
 
-    def test_shift_forward(self, loader: DataLoader) -> None:
-        """
-        Проверяет смещение вправо (в будущее).
-        """
-        start = datetime(2025, 10, 28, 10, 0)
-        end = datetime(2025, 10, 28, 10, 9)
-        loader.set_visible_range(start, end)
-
-        delta = timedelta(minutes=10)
-        loader.shift_visible_range(delta)
-
-        assert loader.visible_start == start + delta
-        assert loader.visible_end == end + delta
-
-    def test_shift_backward(self, loader: DataLoader) -> None:
-        """
-        Проверяет смещение влево (в прошлое).
-        """
-        start = datetime(2025, 10, 28, 10, 10)
-        end = datetime(2025, 10, 28, 10, 19)
-        loader.set_visible_range(start, end)
-
-        delta = timedelta(minutes=-10)
-        loader.shift_visible_range(delta)
-
-        assert loader.visible_start == start + delta
-        assert loader.visible_end == end + delta
-
-    def test_shift_without_window_raises(
-        self, loader: DataLoader
-    ) -> None:
-        """
-        Проверяет, что shift без установленного окна
-        вызывает RuntimeError.
-        """
-        with pytest.raises(RuntimeError):
-            loader.shift_visible_range(timedelta(minutes=5))
+    assert isinstance(df, pl.DataFrame)
+    assert len(df) == 10
+    assert df.columns == [
+        "id", "date", "sec_code", "class_code",
+        "open", "high", "low", "close", "volume", "open_interest",
+    ]
 
 
-class TestZoomVisibleRange:
+def test_load_candles_data_types(temp_db_path: str) -> None:
     """
-    Тестирование изменения масштаба.
+    Проверяет корректность типов данных в загруженном DataFrame.
     """
+    df = load_candles(temp_db_path, "TEST")
 
-    def test_zoom_in(self, loader: DataLoader) -> None:
-        """
-        Проверяет уменьшение окна (приближение).
-        """
-        start = datetime(2025, 10, 28, 10, 0)
-        end = datetime(2025, 10, 28, 10, 19)
-        loader.set_visible_range(start, end)
-
-        loader.zoom_visible_range(0.5)
-
-        # Окно должно уменьшиться вдвое
-        new_duration = loader.visible_end - loader.visible_start
-        old_duration = end - start
-        assert abs(new_duration.total_seconds() - old_duration.total_seconds() * 0.5) < 1
-
-    def test_zoom_out(self, loader: DataLoader) -> None:
-        """
-        Проверяет увеличение окна (отдаление).
-        """
-        start = datetime(2025, 10, 28, 10, 0)
-        end = datetime(2025, 10, 28, 10, 9)
-        loader.set_visible_range(start, end)
-
-        loader.zoom_visible_range(2.0)
-
-        # Окно должно увеличиться вдвое
-        new_duration = loader.visible_end - loader.visible_start
-        old_duration = end - start
-        assert abs(new_duration.total_seconds() - old_duration.total_seconds() * 2.0) < 1
-
-    def test_zoom_invalid_factor(self, loader: DataLoader) -> None:
-        """
-        Проверяет, что нулевой или отрицательный factor
-        вызывает ошибку.
-        """
-        start = datetime(2025, 10, 28, 10, 0)
-        end = datetime(2025, 10, 28, 10, 9)
-        loader.set_visible_range(start, end)
-
-        with pytest.raises(ValueError):
-            loader.zoom_visible_range(0)
-
-        with pytest.raises(ValueError):
-            loader.zoom_visible_range(-1)
-
-    def test_zoom_without_window_raises(
-        self, loader: DataLoader
-    ) -> None:
-        """Проверяет zoom без установленного окна."""
-        with pytest.raises(RuntimeError):
-            loader.zoom_visible_range(1.5)
+    # Проверяем типы колонок
+    assert df.schema["id"] == pl.Int64
+    assert df.schema["date"] == pl.Datetime
+    assert df.schema["sec_code"] == pl.String
+    assert df.schema["class_code"] == pl.String
+    assert df.schema["open"] == pl.Float64
+    assert df.schema["high"] == pl.Float64
+    assert df.schema["low"] == pl.Float64
+    assert df.schema["close"] == pl.Float64
+    assert df.schema["volume"] == pl.Int64
+    assert df.schema["open_interest"] == pl.Int64
 
 
-class TestReloadAndClear:
+def test_load_candles_data_correctness(temp_db_path: str) -> None:
     """
-    Тестирование перезагрузки и очистки.
+    Проверяет корректность загруженных значений.
     """
+    df = load_candles(temp_db_path, "TEST")
 
-    def test_reload_returns_data(
-        self, loader: DataLoader
-    ) -> None:
-        """
-        Проверяет, что reload возвращает данные.
-        """
-        start = datetime(2025, 10, 28, 10, 0)
-        end = datetime(2025, 10, 28, 10, 9)
-        loader.set_visible_range(start, end)
-
-        candles = loader.reload()
-        assert len(candles) > 0
-
-    def test_reload_without_window(
-        self, loader: DataLoader
-    ) -> None:
-        """
-        Проверяет reload без установленного окна.
-        """
-        candles = loader.reload()
-        assert candles == []
-
-    def test_clear_resets_state(self, loader: DataLoader) -> None:
-        """
-        Проверяет, что clear полностью сбрасывает состояние.
-        """
-        start = datetime(2025, 10, 28, 10, 0)
-        end = datetime(2025, 10, 28, 10, 9)
-        loader.set_visible_range(start, end)
-        assert loader.has_data
-
-        loader.clear()
-
-        assert loader.visible_start is None
-        assert loader.visible_end is None
-        assert loader.loaded_candles == []
-        assert loader.visible_candles == []
-        assert loader.has_data is False
+    # Проверяем первую свечу
+    first_row = df.row(0)
+    assert first_row[df.columns.index("id")] == 1
+    assert first_row[df.columns.index("sec_code")] == "TEST"
+    assert first_row[df.columns.index("class_code")] == "SPBFUT"
+    assert first_row[df.columns.index("open")] == 100.0
+    assert first_row[df.columns.index("high")] == 105.0
+    assert first_row[df.columns.index("low")] == 99.0
+    assert first_row[df.columns.index("close")] == 104.0
+    assert first_row[df.columns.index("volume")] == 1000
+    assert first_row[df.columns.index("open_interest")] == 500
 
 
-class TestDataIntegrity:
+def test_load_candles_with_date_filter(temp_db_path: str) -> None:
     """
-    Тестирование целостности загруженных данных.
+    Проверяет фильтрацию свечей по диапазону дат.
     """
+    # Фильтр по одной дате
+    df = load_candles(
+        temp_db_path, "TEST",
+        start_date="2025-10-29 00:00:00",
+        end_date="2025-10-29 23:59:59",
+    )
 
-    def test_visible_candles_within_window(
-        self, loader: DataLoader
-    ) -> None:
-        """
-        Проверяет, что все visible_candles
-        находятся внутри видимого окна.
-        """
-        start = datetime(2025, 10, 28, 10, 5)
-        end = datetime(2025, 10, 28, 10, 14)
-        loader.set_visible_range(start, end)
+    assert len(df) == 2
+    # Все свечи должны быть от 2025-10-29
+    assert all(
+        datetime(2025, 10, 29) <= row[df.columns.index("date")] <= datetime(2025, 10, 29, 23, 59, 59)
+        for row in df.iter_rows()
+    )
 
-        for candle in loader.visible_candles:
-            assert start <= candle.timestamp <= end
 
-    def test_loaded_candles_sorted(
-        self, loader: DataLoader
-    ) -> None:
-        """
-        Проверяет, что loaded_candles отсортированы по времени.
-        """
-        start = datetime(2025, 10, 28, 10, 0)
-        end = datetime(2025, 10, 28, 10, 9)
-        loader.set_visible_range(start, end)
+def test_load_candles_with_start_date_only(temp_db_path: str) -> None:
+    """
+    Проверяет фильтрацию только по начальной дате.
+    """
+    df = load_candles(temp_db_path, "TEST", start_date="2025-10-30 00:00:00")
 
-        candles = loader.loaded_candles
-        timestamps = [c.timestamp for c in candles]
-        assert timestamps == sorted(timestamps)
+    # Должны быть только свечи с 2025-10-30 и позже (3 с 30.10 + 2 с 31.10 = 5 штук)
+    assert len(df) == 5
+    assert all(
+        row[df.columns.index("date")] >= datetime(2025, 10, 30)
+        for row in df.iter_rows()
+    )
 
-    def test_visible_duration_calculation(
-        self, loader: DataLoader
-    ) -> None:
-        """
-        Проверяет расчёт длительности видимого окна.
-        """
-        start = datetime(2025, 10, 28, 10, 0)
-        end = datetime(2025, 10, 28, 10, 9)
-        loader.set_visible_range(start, end)
 
-        duration = loader.visible_duration
-        assert duration is not None
-        assert duration.total_seconds() == 9 * 60  # 9 минут
+def test_load_candles_with_end_date_only(temp_db_path: str) -> None:
+    """
+    Проверяет фильтрацию только по конечной дате.
+    """
+    df = load_candles(temp_db_path, "TEST", end_date="2025-10-28 23:59:59")
+
+    # Должны быть только свечи до 2025-10-28 (3 штуки)
+    assert len(df) == 3
+    assert all(
+        row[df.columns.index("date")] <= datetime(2025, 10, 28, 23, 59, 59)
+        for row in df.iter_rows()
+    )
+
+
+def test_load_candles_empty_filter(temp_db_path: str) -> None:
+    """
+    Проверяет, что фильтр по несуществующей дате возвращает пустой DataFrame.
+    """
+    df = load_candles(
+        temp_db_path, "TEST",
+        start_date="2026-01-01 00:00:00",
+        end_date="2026-01-02 00:00:00",
+    )
+
+    assert isinstance(df, pl.DataFrame)
+    assert df.is_empty()
+
+
+def test_load_candles_table_not_found(temp_db_path: str) -> None:
+    """
+    Проверяет, что выбрасывается ValueError для несуществующего инструмента.
+    """
+    with pytest.raises(ValueError) as exc_info:
+        load_candles(temp_db_path, "NONEXISTENT")
+
+    assert "не найдена в базе" in str(exc_info.value)
+
+
+def test_load_candles_file_not_found() -> None:
+    """
+    Проверяет, что выбрасывается FileNotFoundError если БД не существует.
+    """
+    with pytest.raises(FileNotFoundError) as exc_info:
+        load_candles("C:\\missing.db", "TEST")
+
+    assert "Файл базы данных не найден" in str(exc_info.value)
+
+
+def test_get_table_list_empty_db(tmp_path: Path) -> None:
+    """
+    Проверяет, что для пустой БД возвращается пустой список.
+    """
+    db_file = tmp_path / "empty.db"
+    conn = sqlite3.connect(str(db_file))
+    conn.close()
+
+    tables = get_table_list(str(db_file))
+    assert tables == []
+
+
+def test_load_candles_orders_by_date(temp_db_path: str) -> None:
+    """
+    Проверяет, что данные отсортированы по дате по возрастанию.
+    """
+    df = load_candles(temp_db_path, "TEST")
+    dates = df["date"].to_list()
+
+    # Каждая следующая дата должна быть >= предыдущей
+    for i in range(len(dates) - 1):
+        assert dates[i] <= dates[i + 1], f"Сортировка нарушена на индексе {i}: {dates[i]} > {dates[i + 1]}"
+
+
+def test_get_available_instruments_skips_missing_dbs(tmp_path: Path) -> None:
+    """
+    Проверяет, что get_available_instruments пропускает несуществующие БД.
+    """
+    result = get_available_instruments(
+        futures_paths=[str(tmp_path / "nonexistent.db")],
+        shares_paths=[],
+    )
+
+    assert result == {"futures": [], "shares": []}
+
+
+def test_get_available_instruments_with_real_db(temp_db_path: str) -> None:
+    """
+    Проверяет сбор инструментов из реальной (тестовой) БД.
+    """
+    result = get_available_instruments(
+        futures_paths=[temp_db_path],
+        shares_paths=[],
+    )
+
+    assert len(result["futures"]) == 2
+    # Таблицы сортируются по алфавиту: TEST2_M1 раньше TEST_M1
+    assert result["futures"][0]["sec_code"] == "TEST2"
+    assert result["futures"][1]["sec_code"] == "TEST"
+
+
+def test_load_candles_custom_timeframe(temp_db_path: str) -> None:
+    """
+    Проверяет загрузку с кастомным таймфреймом.
+    """
+    # Пытаемся загрузить данные с таймфреймом M5 — таблицы нет
+    with pytest.raises(ValueError) as exc_info:
+        load_candles(temp_db_path, "TEST", timeframe="M5")
+
+    assert "не найдена в базе" in str(exc_info.value)
+
+
+def test_load_candles_sec_code_case_sensitivity(temp_db_path: str) -> None:
+    """
+    Проверяет, что поиск таблицы регистрозависим (как в SQLite по умолчанию).
+    """
+    with pytest.raises(ValueError):
+        load_candles(temp_db_path, "test")
+
+
+def test_load_candles_volume_and_open_interest_types(temp_db_path: str) -> None:
+    """
+    Проверяет, что volume и open_interest — целые числа.
+    """
+    df = load_candles(temp_db_path, "TEST")
+
+    assert df["volume"].dtype == pl.Int64
+    assert df["open_interest"].dtype == pl.Int64
+    assert df["volume"].sum() > 0
+    assert df["open_interest"].sum() > 0

@@ -1,6 +1,5 @@
 {
-  "task_id": "Этап 1.1",
-  "tests_written": true,
-  "last_run_result": "pass",
-  "test_files": ["tests/test_main.py"]
+  "task_id": null,
+  "tests_written": false,
+  "last_run_result": null
 }

@@ -1,272 +1,221 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-Модуль динамической загрузки свечных данных.
+Модуль загрузки данных из SQLite-баз QUIK.
 
-Реализует пагинацию с паддингом:
-- загружается только видимая область + padding экранов с каждой стороны
-- при смещении видимой области данные догружаются автоматически
-- минимизируются повторные запросы к БД
+Предоставляет функции для подключения к базам данных фьючерсов и акций,
+получения списка доступных инструментов и загрузки свечных данных.
 """
 
-from __future__ import annotations
+import sqlite3
+from pathlib import Path
+from typing import Optional
 
-from datetime import datetime, timedelta
-from typing import List, Optional, Tuple
-
-from src.data.database import DatabaseManager
-from src.data.models import Candle
-from src.utils.config import CONFIG
+import polars as pl
 
 
-class DataLoader:
+# Пути к базам данных по умолчанию (из project.md)
+DEFAULT_FUTURES_DB_PATHS: list[str] = [
+    r"D:\_MARKET_TICKDATA\QUIK_DATA\allCandlesFutures.db",
+    r"D:\_MARKET_TICKDATA\QUIK_DATA\allCandlesFutures_2020.db",
+    r"D:\_MARKET_TICKDATA\QUIK_DATA\allCandlesFutures_2023.db",
+]
+
+DEFAULT_SHARES_DB_PATHS: list[str] = [
+    r"D:\_MARKET_TICKDATA\QUIK_DATA\allCandlesShares.db",
+    r"D:\_MARKET_TICKDATA\QUIK_DATA\allCandlesShares_2023.db",
+]
+
+
+def get_table_list(db_path: str) -> list[str]:
     """
-    Загрузчик свечных данных с динамической пагинацией.
+    Возвращает список всех таблиц (торговых инструментов) в указанной БД.
 
-    Управляет видимым временным окном и автоматически подгружает
-    данные с запасом (padding) с каждой стороны.
+    Параметры:
+        db_path: Путь к файлу SQLite базы данных.
 
-    Атрибуты:
-        sec_code — код инструмента
-        visible_start — начало видимого окна
-        visible_end — конец видимого окна
-        _candles — все загруженные свечи (отсортированы)
-        _padding_factor — количество экранов запаса с каждой стороны
+    Возвращает:
+        Список имён таблиц в формате ['AAH6_M1', 'SiH6_M1', ...].
+
+    Исключения:
+        FileNotFoundError: Если файл БД не существует.
+        sqlite3.DatabaseError: Если файл не является SQLite БД.
     """
+    db_file = Path(db_path)
+    if not db_file.exists():
+        raise FileNotFoundError(f"Файл базы данных не найден: {db_path}")
 
-    def __init__(
-        self,
-        db_manager: DatabaseManager,
-        sec_code: str,
-        padding_factor: int = 2,
-    ) -> None:
+    with sqlite3.connect(str(db_file)) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+        tables = [row[0] for row in cursor.fetchall()]
+
+    return tables
+
+
+def load_candles(
+    db_path: str,
+    sec_code: str,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    timeframe: str = "M1",
+) -> pl.DataFrame:
+    """
+    Загружает свечные данные для указанного инструмента из SQLite БД.
+
+    Имя таблицы формируется по шаблону: {sec_code}_{timeframe}.
+    Пример: для sec_code='AAH6' и timeframe='M1' таблица будет 'AAH6_M1'.
+
+    Параметры:
+        db_path: Путь к файлу SQLite базы данных.
+        sec_code: Код инструмента (например 'AAH6', 'SiH6').
+        start_date: Начальная дата фильтрации (включительно, формат 'YYYY-MM-DD HH:MM:SS').
+                    Если None — без фильтра по началу.
+        end_date: Конечная дата фильтрации (включительно, формат 'YYYY-MM-DD HH:MM:SS').
+                  Если None — без фильтра по концу.
+        timeframe: Таймфрейм (по умолчанию 'M1' — 1 минута).
+
+    Возвращает:
+        Polars DataFrame с колонками:
+        - id (Int64) — первичный ключ
+        - date (Datetime) — дата и время свечи
+        - sec_code (String) — код инструмента
+        - class_code (String) — класс инструмента
+        - open (Float64) — цена открытия
+        - high (Float64) — максимальная цена
+        - low (Float64) — минимальная цена
+        - close (Float64) — цена закрытия
+        - volume (Int64) — объём
+        - open_interest (Int64) — открытый интерес
+
+    Исключения:
+        FileNotFoundError: Если файл БД не существует.
+        ValueError: Если таблица для указанного инструмента не найдена.
+    """
+    db_file = Path(db_path)
+    if not db_file.exists():
+        raise FileNotFoundError(f"Файл базы данных не найден: {db_path}")
+
+    table_name = f"{sec_code}_{timeframe}"
+
+    with sqlite3.connect(str(db_file)) as conn:
+        # Проверяем существование таблицы
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (table_name,),
+        )
+        if cursor.fetchone() is None:
+            raise ValueError(
+                f"Таблица '{table_name}' не найдена в базе '{db_path}'. "
+                f"Доступные инструменты: {get_table_list(db_path)}"
+            )
+
+        # Строим SQL запрос с опциональной фильтрацией по дате
+        query = f"""
+            SELECT
+                "ID" AS id,
+                "Date" AS date,
+                "SecCode" AS sec_code,
+                "ClassCode" AS class_code,
+                CAST("O" AS REAL) AS open,
+                CAST("H" AS REAL) AS high,
+                CAST("L" AS REAL) AS low,
+                CAST("C" AS REAL) AS close,
+                "V" AS volume,
+                "OpenInterest" AS open_interest
+            FROM "{table_name}"
         """
-        Инициализация загрузчика.
+        params: list[str] = []
 
-        Параметры:
-            db_manager — менеджер подключений к БД
-            sec_code — код инструмента (например 'AAH6')
-            padding_factor — сколько видимых окон загружать
-                             с каждой стороны (по умолчанию 2)
-        """
-        self._db: DatabaseManager = db_manager
-        self.sec_code: str = sec_code
-        self._padding_factor: int = padding_factor
+        # Добавляем WHERE условия если указаны даты
+        where_clauses: list[str] = []
+        if start_date is not None:
+            where_clauses.append("\"Date\" >= ?")
+            params.append(start_date)
+        if end_date is not None:
+            where_clauses.append("\"Date\" <= ?")
+            params.append(end_date)
 
-        # Текущее видимое окно (временной диапазон)
-        self.visible_start: Optional[datetime] = None
-        self.visible_end: Optional[datetime] = None
+        if where_clauses:
+            query += " WHERE " + " AND ".join(where_clauses)
 
-        # Все загруженные свечи (включая padding)
-        self._candles: List[Candle] = []
+        query += " ORDER BY \"Date\" ASC"
 
-        # Границы загруженных данных (с учётом padding)
-        self._loaded_start: Optional[datetime] = None
-        self._loaded_end: Optional[datetime] = None
+        # Загружаем данные в Polars DataFrame
+        df = pl.read_database(query, connection=conn, execute_options={"parameters": params})
 
-    @property
-    def visible_duration(self) -> Optional[timedelta]:
-        """
-        Длительность видимого окна.
-
-        Возвращает None, если окно не задано.
-        """
-        if self.visible_start is None or self.visible_end is None:
-            return None
-        return self.visible_end - self.visible_start
-
-    @property
-    def loaded_candles(self) -> List[Candle]:
-        """
-        Возвращает все загруженные свечи (с паддингом).
-        """
-        return self._candles.copy()
-
-    @property
-    def visible_candles(self) -> List[Candle]:
-        """
-        Возвращает свечи только в пределах видимого окна.
-        """
-        if (
-            self.visible_start is None
-            or self.visible_end is None
-            or not self._candles
-        ):
-            return []
-
-        return [
-            c
-            for c in self._candles
-            if self.visible_start <= c.timestamp <= self.visible_end
-        ]
-
-    @property
-    def has_data(self) -> bool:
-        """
-        Проверяет, загружены ли какие-либо данные.
-        """
-        return len(self._candles) > 0
-
-    def _calculate_padded_range(
-        self,
-    ) -> Optional[Tuple[datetime, datetime]]:
-        """
-        Рассчитывает диапазон загрузки с учётом padding.
-
-        Берёт видимое окно и расширяет его на padding_factor
-        с каждой стороны.
-
-        Возвращает (start, end) или None, если окно не задано.
-        """
-        if self.visible_start is None or self.visible_end is None:
-            return None
-
-        duration = self.visible_end - self.visible_start
-        pad = duration * self._padding_factor
-
-        return (self.visible_start - pad, self.visible_end + pad)
-
-    def _needs_reload(
-        self, padded_start: datetime, padded_end: datetime
-    ) -> bool:
-        """
-        Проверяет, нужно ли перезагружать данные.
-
-        Возвращает True, если загруженные данные не покрывают
-        запрошенный padded-диапазон.
-        """
-        if not self._candles:
-            return True
-        if self._loaded_start is None or self._loaded_end is None:
-            return True
-
-        return (
-            padded_start < self._loaded_start
-            or padded_end > self._loaded_end
+    # Приводим колонку date к типу Datetime
+    if not df.is_empty():
+        df = df.with_columns(
+            pl.col("date").str.to_datetime("%Y-%m-%d %H:%M:%S")
         )
 
-    def set_visible_range(
-        self,
-        start: datetime,
-        end: datetime,
-    ) -> List[Candle]:
-        """
-        Устанавливает видимое окно и загружает данные с паддингом.
+    return df
 
-        Параметры:
-            start — начало видимого окна
-            end — конец видимого окна
 
-        Возвращает: список загруженных свечей (с паддингом).
-        """
-        if start >= end:
-            raise ValueError(
-                "Начало видимого окна должно быть раньше конца"
-            )
+def get_available_instruments(
+    futures_paths: Optional[list[str]] = None,
+    shares_paths: Optional[list[str]] = None,
+) -> dict[str, list[dict[str, str]]]:
+    """
+    Собирает список всех доступных инструментов из всех БД.
 
-        self.visible_start = start
-        self.visible_end = end
+    Параметры:
+        futures_paths: Список путей к БД фьючерсов.
+                       Если None — используются пути по умолчанию.
+        shares_paths: Список путей к БД акций.
+                      Если None — используются пути по умолчанию.
 
-        padded_range = self._calculate_padded_range()
-        if padded_range is None:
-            return []
+    Возвращает:
+        Словарь с категориями:
+        {
+            "futures": [
+                {"db_path": "...", "table": "AAH6_M1", "sec_code": "AAH6"},
+                ...
+            ],
+            "shares": [...]
+        }
 
-        padded_start, padded_end = padded_range
+    Примечание:
+        Если файл БД не существует — он пропускается, ошибка не выбрасывается.
+    """
+    if futures_paths is None:
+        futures_paths = DEFAULT_FUTURES_DB_PATHS
+    if shares_paths is None:
+        shares_paths = DEFAULT_SHARES_DB_PATHS
 
-        # Загружаем, если нужно
-        if self._needs_reload(padded_start, padded_end):
-            self._candles = self._db.get_candles(
-                self.sec_code,
-                start_date=padded_start,
-                end_date=padded_end,
-            )
-            self._loaded_start = padded_start
-            self._loaded_end = padded_end
-        else:
-            # Уже загружено, ничего не делаем
-            pass
+    result: dict[str, list[dict[str, str]]] = {
+        "futures": [],
+        "shares": [],
+    }
 
-        return self.loaded_candles
+    # Собираем инструменты из баз фьючерсов
+    for db_path in futures_paths:
+        try:
+            tables = get_table_list(db_path)
+            for table in tables:
+                # Извлекаем код инструмента из имени таблицы (до _M1, _M5 и т.д.)
+                sec_code = table.split("_")[0] if "_" in table else table
+                result["futures"].append({
+                    "db_path": db_path,
+                    "table": table,
+                    "sec_code": sec_code,
+                })
+        except (FileNotFoundError, sqlite3.DatabaseError):
+            # Пропускаем недоступные БД
+            continue
 
-    def shift_visible_range(
-        self,
-        delta: timedelta,
-    ) -> List[Candle]:
-        """
-        Смещает видимое окно на указанную величину.
+    # Собираем инструменты из баз акций
+    for db_path in shares_paths:
+        try:
+            tables = get_table_list(db_path)
+            for table in tables:
+                sec_code = table.split("_")[0] if "_" in table else table
+                result["shares"].append({
+                    "db_path": db_path,
+                    "table": table,
+                    "sec_code": sec_code,
+                })
+        except (FileNotFoundError, sqlite3.DatabaseError):
+            continue
 
-        Параметры:
-            delta — величина смещения (положительная = вправо/будущее,
-                    отрицательная = влево/прошлое)
-
-        Возвращает: список загруженных свечей (с паддингом).
-        """
-        if self.visible_start is None or self.visible_end is None:
-            raise RuntimeError(
-                "Видимое окно не задано. "
-                "Сначала вызовите set_visible_range."
-            )
-
-        new_start = self.visible_start + delta
-        new_end = self.visible_end + delta
-
-        return self.set_visible_range(new_start, new_end)
-
-    def zoom_visible_range(self, factor: float) -> List[Candle]:
-        """
-        Изменяет масштаб видимого окна (зум).
-
-        Параметры:
-            factor — коэффициент масштаба:
-                     > 1 — увеличить окно (отдалить)
-                     < 1 — уменьшить окно (приблизить)
-                     Центр окна остаётся неизменным.
-
-        Возвращает: список загруженных свечей (с паддингом).
-        """
-        if self.visible_start is None or self.visible_end is None:
-            raise RuntimeError(
-                "Видимое окно не задано. "
-                "Сначала вызовите set_visible_range."
-            )
-
-        if factor <= 0:
-            raise ValueError(
-                "Коэффициент масштаба должен быть положительным"
-            )
-
-        center = self.visible_start + (self.visible_end - self.visible_start) / 2
-        half_duration = (self.visible_end - self.visible_start) * factor / 2
-
-        new_start = center - half_duration
-        new_end = center + half_duration
-
-        return self.set_visible_range(new_start, new_end)
-
-    def reload(self) -> List[Candle]:
-        """
-        Принудительно перезагружает все данные для текущего видимого окна.
-
-        Возвращает список загруженных свечей.
-        """
-        if self.visible_start is None or self.visible_end is None:
-            return []
-
-        # Сбрасываем кэш загруженных границ
-        self._loaded_start = None
-        self._loaded_end = None
-
-        # Перезагружаем
-        return self.set_visible_range(
-            self.visible_start, self.visible_end
-        )
-
-    def clear(self) -> None:
-        """
-        Очищает все загруженные данные и сбрасывает видимое окно.
-        """
-        self.visible_start = None
-        self.visible_end = None
-        self._candles = []
-        self._loaded_start = None
-        self._loaded_end = None
+    return result

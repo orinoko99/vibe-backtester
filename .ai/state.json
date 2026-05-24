@@ -1,17 +1,20 @@
 {
-  "current_task": "Этап 3.4 — GUI: панель выбора инструментов",
+  "current_task": "Этап 1.2 — Реализовать загрузчик данных из SQLite + тесты",
   "plan": [
-    "Реализовать InstrumentPanel: список инструментов, выбор, поиск по коду",
-    "Подключить выбор инструмента к MainWindow.load_instrument",
-    "Написать тесты"
+    "Написать src/data/loader.py",
+    "Написать tests/test_loader.py",
+    "Запустить тесты",
+    "Исправить ошибки если есть",
+    "Сделать ревью",
+    "Зафиксировать результат"
   ],
-  "step_index": 2,
-  "mode": "LOGGER",
-  "status": "logging",
+  "step_index": 6,
+  "mode": "GIT",
+  "status": "done",
   "attempts": 0,
   "tests": {
     "written": true,
-    "last_result": "117 passed"
+    "last_result": "pass"
   },
   "review": {
     "done": true
