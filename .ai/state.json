@@ -1,13 +1,10 @@
 {
-  "current_task": "Этап 1.1 — Инициализация проекта",
+  "current_task": "Этап 1.2 — Модуль config.py",
   "plan": [
-    "Проверить/установить зависимости в venv",
-    "Создать main.py — точка входа",
-    "Создать run_backtester.bat — bat-файл запуска",
-    "Создать README.md",
-    "Написать тест запуска приложения"
+    "Создать src/utils/config.py с путями к БД и настройками",
+    "Написать тесты для config.py"
   ],
-  "step_index": 4,
+  "step_index": 1,
   "mode": "LOGGER",
   "status": "done",
   "attempts": 0,
