@@ -22,7 +22,13 @@
 
 - [x] **Этап 2.3** — Модуль data/loader.py — 2026-05-24 — commit aa74340
 
-- [x] **Этап 3.1** — GUI: главное окно PySide6 — 2026-05-24
+- [x] **Этап 3.1** — GUI: главное окно PySide6 — 2026-05-24 — commit 64791a1
+
+- [x] **Этап 3.2** — GUI: виджет графика lightweight-charts — 2026-05-24
+  - Создан `src/gui/chart_widget.py` на QWebEngineView
+  - ChartWidget интегрирован в MainWindow
+  - Методы: set_candles, set_visible_range, set_theme, fit_content
+  - Тесты: 15 в test_main.py
   - Создан `src/gui/main_window.py` с меню, тулбаром, док-панелями, статус-баром
   - Обновлён `main.py` — импорт из `src.gui.main_window`
   - Написаны тесты (`tests/test_main.py` — 12 тестов)

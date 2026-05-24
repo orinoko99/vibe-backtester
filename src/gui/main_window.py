@@ -16,7 +16,6 @@ from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QDockWidget,
-    QHBoxLayout,
     QLabel,
     QMainWindow,
     QMenuBar,
@@ -26,6 +25,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from src.gui.chart_widget import ChartWidget
 
 
 class InstrumentPanel(QDockWidget):
@@ -88,39 +89,7 @@ class IndicatorsPanel(QDockWidget):
         )
 
 
-class ChartPlaceholder(QWidget):
-    """
-    Заглушка для области графика.
 
-    В дальнейшем будет заменена на lightweight-charts виджет,
-    который отображает свечи, объём, volume profile
-    и поддерживает интерактивное взаимодействие.
-    """
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-
-        layout = QVBoxLayout(self)
-        self._label = QLabel(
-            "Область графика\n\n"
-            "Выберите инструмент для отображения"
-        )
-        self._label.setAlignment(Qt.AlignCenter)
-        self._label.setStyleSheet(
-            "QLabel {"
-            "  color: #888;"
-            "  font-size: 16px;"
-            "  background-color: #1a1a2e;"
-            "  border: 1px solid #333;"
-            "}"
-        )
-        layout.addWidget(self._label)
-
-    def set_placeholder_text(self, text: str) -> None:
-        """
-        Устанавливает текст-заглушку для графика.
-        """
-        self._label.setText(text)
 
 
 class MainWindow(QMainWindow):
@@ -209,7 +178,7 @@ class MainWindow(QMainWindow):
         """
         Создаёт центральную область с графиком.
         """
-        self._chart_widget = ChartPlaceholder()
+        self._chart_widget = ChartWidget()
         self.setCentralWidget(self._chart_widget)
 
     def _create_dock_panels(self) -> None:
@@ -264,9 +233,9 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     @property
-    def chart_widget(self) -> ChartPlaceholder:
+    def chart_widget(self) -> ChartWidget:
         """
-        Возвращает виджет графика.
+        Возвращает виджет графика (lightweight-charts).
         """
         return self._chart_widget
 

@@ -1,9 +1,9 @@
 {
-  "current_task": "Этап 3.1 — GUI: главное окно PySide6",
+  "current_task": "Этап 3.2 — GUI: виджет графика lightweight-charts",
   "plan": [
-    "Создать src/gui/main_window.py — полноценное главное окно с размещением",
-    "Подключить MainWindow в main.py",
-    "Написать тесты для main_window.py"
+    "Создать src/gui/chart_widget.py — обёртка для lightweight-charts",
+    "Интегрировать в MainWindow (заменить ChartPlaceholder)",
+    "Написать тесты для chart_widget.py"
   ],
   "step_index": 2,
   "mode": "LOGGER",

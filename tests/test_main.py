@@ -2,7 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 Тесты для главного окна приложения (src/gui/main_window.py).
-Проверяют создание окна, меню, панелей, строки состояния.
+Проверяют создание окна, меню, панелей, строки состояния,
+а также виджета графика (ChartWidget).
 """
 
 from __future__ import annotations
@@ -12,12 +13,12 @@ from pathlib import Path
 
 import pytest
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QDockWidget, QStatusBar
+from PySide6.QtWidgets import QApplication, QStatusBar
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from src.gui.chart_widget import ChartWidget
 from src.gui.main_window import (
-    ChartPlaceholder,
     IndicatorsPanel,
     InstrumentPanel,
     MainWindow,
@@ -39,27 +40,18 @@ class TestMainWindowCreation:
     """
 
     def test_window_created(self, app: QApplication) -> None:
-        """
-        Проверяет, что MainWindow создаётся без ошибок.
-        """
         window = MainWindow()
         assert window is not None
         assert window.windowTitle() == "Backtester v0.1"
         window.close()
 
     def test_window_default_size(self, app: QApplication) -> None:
-        """
-        Проверяет размеры окна по умолчанию.
-        """
         window = MainWindow()
         assert window.width() == 1280
         assert window.height() == 800
         window.close()
 
     def test_window_minimum_size(self, app: QApplication) -> None:
-        """
-        Проверяет минимальные размеры окна.
-        """
         window = MainWindow()
         assert window.minimumWidth() == 1024
         assert window.minimumHeight() == 600
@@ -72,43 +64,29 @@ class TestMainWindowComponents:
     """
 
     def test_has_instrument_panel(self, app: QApplication) -> None:
-        """
-        Проверяет наличие панели инструментов.
-        """
         window = MainWindow()
         panel = window.instrument_panel
         assert isinstance(panel, InstrumentPanel)
         assert panel.windowTitle() == "Инструменты"
-        # Должна быть слева
         assert window.dockWidgetArea(panel) == Qt.LeftDockWidgetArea
         window.close()
 
     def test_has_indicators_panel(self, app: QApplication) -> None:
-        """
-        Проверяет наличие панели индикаторов.
-        """
         window = MainWindow()
         panel = window.indicators_panel
         assert isinstance(panel, IndicatorsPanel)
         assert panel.windowTitle() == "Индикаторы"
-        # Должна быть справа
         assert window.dockWidgetArea(panel) == Qt.RightDockWidgetArea
         window.close()
 
     def test_has_chart_widget(self, app: QApplication) -> None:
-        """
-        Проверяет наличие центрального виджета графика.
-        """
         window = MainWindow()
         chart = window.chart_widget
-        assert isinstance(chart, ChartPlaceholder)
+        assert isinstance(chart, ChartWidget)
         assert window.centralWidget() is chart
         window.close()
 
     def test_has_status_bar(self, app: QApplication) -> None:
-        """
-        Проверяет наличие строки состояния.
-        """
         window = MainWindow()
         status = window.statusBar()
         assert isinstance(status, QStatusBar)
@@ -116,15 +94,10 @@ class TestMainWindowComponents:
         window.close()
 
     def test_has_menu_bar(self, app: QApplication) -> None:
-        """
-        Проверяет наличие строки меню.
-        """
         window = MainWindow()
         menu_bar = window.menuBar()
-        # Проверяем, что меню не пустое
         actions = menu_bar.actions()
         assert len(actions) > 0, "Строка меню должна содержать пункты"
-        # Проверяем названия меню
         menu_titles = [a.text() for a in actions if a.text()]
         assert "&Файл" in menu_titles
         assert "&Вид" in menu_titles
@@ -132,27 +105,58 @@ class TestMainWindowComponents:
         window.close()
 
 
-class TestChartPlaceholder:
+class TestChartWidget:
     """
-    Тестирование заглушки графика.
+    Тестирование ChartWidget (создание, настройка, получение данных).
     """
 
-    def test_default_text(self, app: QApplication) -> None:
-        """
-        Проверяет текст по умолчанию.
-        """
-        placeholder = ChartPlaceholder()
-        assert "Выберите инструмент" in placeholder._label.text()
-        placeholder.close()
+    def test_chart_widget_created(self, app: QApplication) -> None:
+        chart = ChartWidget()
+        assert chart is not None
+        assert chart._webview is not None
+        chart.close()
 
-    def test_set_placeholder_text(self, app: QApplication) -> None:
+    def test_chart_widget_set_candles_no_crash(
+        self, app: QApplication
+    ) -> None:
         """
-        Проверяет смену текста заглушки.
+        Проверяет, что set_candles не вызывает исключений.
+        Данные ставятся в очередь, если страница не загружена.
         """
-        placeholder = ChartPlaceholder()
-        placeholder.set_placeholder_text("Новый текст")
-        assert placeholder._label.text() == "Новый текст"
-        placeholder.close()
+        chart = ChartWidget()
+        from datetime import datetime
+        from src.data.models import Candle
+        candles = [
+            Candle(
+                timestamp=datetime(2025, 10, 28, 10, 0),
+                open=100.0, high=105.0,
+                low=95.0, close=102.0,
+                volume=1000,
+            ),
+        ]
+        # Не должно быть исключений — скрипт уходит в очередь
+        chart.set_candles(candles)
+        assert len(chart._pending_scripts) > 0
+        chart.close()
+
+    def test_chart_widget_set_theme(self, app: QApplication) -> None:
+        chart = ChartWidget()
+        # Не должно быть исключений
+        chart.set_theme("#000000", "#ffffff", "#333333")
+        assert len(chart._pending_scripts) > 0
+        chart.close()
+
+    def test_chart_widget_fit_content(self, app: QApplication) -> None:
+        chart = ChartWidget()
+        chart.fit_content()
+        assert len(chart._pending_scripts) > 0
+        chart.close()
+
+    def test_chart_widget_clear(self, app: QApplication) -> None:
+        chart = ChartWidget()
+        chart.clear()
+        assert len(chart._pending_scripts) > 0
+        chart.close()
 
 
 class TestMainWindowShowHide:
@@ -161,9 +165,6 @@ class TestMainWindowShowHide:
     """
 
     def test_window_show_and_hide(self, app: QApplication) -> None:
-        """
-        Проверяет, что окно отображается и скрывается без ошибок.
-        """
         window = MainWindow()
         window.show()
         assert window.isVisible()
@@ -174,9 +175,6 @@ class TestMainWindowShowHide:
     def test_dock_panels_visible_by_default(
         self, app: QApplication
     ) -> None:
-        """
-        Проверяет, что боковые панели видны по умолчанию.
-        """
         window = MainWindow()
         window.show()
         assert window.instrument_panel.isVisible()
