@@ -24,7 +24,14 @@
 
 - [x] **Этап 3.1** — GUI: главное окно PySide6 — 2026-05-24 — commit 64791a1
 
-- [x] **Этап 3.2** — GUI: виджет графика lightweight-charts — 2026-05-24
+- [x] **Этап 3.2** — GUI: виджет графика lightweight-charts — 2026-05-24 — commit 7d93be7
+
+- [x] **Этап 3.3** — GUI: интерактивность графика — 2026-05-24
+  - QWebChannel мост для JS→Python (ChartBridge)
+  - Подписка на subscribeVisibleTimeRangeChange
+  - Интеграция DataLoader с ChartWidget
+  - load_instrument с автоматической подгрузкой
+  - 112 тестов проходят
   - Создан `src/gui/chart_widget.py` на QWebEngineView
   - ChartWidget интегрирован в MainWindow
   - Методы: set_candles, set_visible_range, set_theme, fit_content

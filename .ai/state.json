@@ -1,9 +1,9 @@
 {
-  "current_task": "Этап 3.2 — GUI: виджет графика lightweight-charts",
+  "current_task": "Этап 3.3 — GUI: интерактивность графика",
   "plan": [
-    "Создать src/gui/chart_widget.py — обёртка для lightweight-charts",
-    "Интегрировать в MainWindow (заменить ChartPlaceholder)",
-    "Написать тесты для chart_widget.py"
+    "Настроить zoom/pan в ChartWidget (подписка на события изменения видимого диапазона)",
+    "Подключить DataLoader к ChartWidget для динамической подгрузки",
+    "Добавить тесты интеграции"
   ],
   "step_index": 2,
   "mode": "LOGGER",

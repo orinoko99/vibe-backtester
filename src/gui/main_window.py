@@ -12,6 +12,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+from typing import Optional
+
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
@@ -26,6 +29,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from src.data.database import DatabaseManager
+from src.data.loader import DataLoader
 from src.gui.chart_widget import ChartWidget
 
 
@@ -115,12 +120,20 @@ class MainWindow(QMainWindow):
         self.resize(1280, 800)
         self.setMinimumSize(1024, 600)
 
+        # Компоненты данных
+        self._db_manager: DatabaseManager = DatabaseManager()
+        self._data_loader: Optional[DataLoader] = None
+
         # Создаём все элементы интерфейса
+        # Панели должны быть созданы до меню (меню ссылается на них)
+        self._create_dock_panels()
         self._create_menu()
         self._create_toolbar()
         self._create_central_widget()
-        self._create_dock_panels()
         self._create_status_bar()
+
+        # Настраиваем тему графика при загрузке
+        self._chart_widget.set_theme()
 
     # ------------------------------------------------------------------
     #  Создание элементов интерфейса
@@ -147,11 +160,17 @@ class MainWindow(QMainWindow):
         toggle_instruments = QAction("&Инструменты", self)
         toggle_instruments.setCheckable(True)
         toggle_instruments.setChecked(True)
+        toggle_instruments.triggered.connect(
+            self._instrument_panel.setVisible
+        )
         view_menu.addAction(toggle_instruments)
 
         toggle_indicators = QAction("&Индикаторы", self)
         toggle_indicators.setCheckable(True)
         toggle_indicators.setChecked(True)
+        toggle_indicators.triggered.connect(
+            self._indicators_panel.setVisible
+        )
         view_menu.addAction(toggle_indicators)
 
         # --- Меню "Справка" ---
@@ -224,9 +243,107 @@ class MainWindow(QMainWindow):
     def _on_refresh(self) -> None:
         """
         Обработчик кнопки обновления данных.
-        Пока только обновляет текст в строке состояния.
+        Перезагружает данные для текущего инструмента.
         """
-        self.statusBar().showMessage("Обновление данных...", 3000)
+        if self._data_loader is None:
+            self.statusBar().showMessage(
+                "Нет загруженного инструмента", 3000
+            )
+            return
+
+        loaded = self._data_loader.reload()
+        if loaded:
+            self._chart_widget.set_candles(loaded)
+
+        self.statusBar().showMessage(
+            f"Данные обновлены: {len(loaded)} свечей", 3000
+        )
+
+    # ------------------------------------------------------------------
+    #  Загрузка инструмента и интеграция с DataLoader
+    # ------------------------------------------------------------------
+
+    def load_instrument(
+        self,
+        sec_code: str,
+        days_back: int = 30,
+    ) -> None:
+        """
+        Загружает инструмент и отображает его свечи на графике.
+
+        Параметры:
+            sec_code — код инструмента (например 'AAH6')
+            days_back — количество дней от текущей даты для начального окна
+        """
+        # Ищем инструмент в БД
+        entry = self._db_manager.find_instrument(sec_code)
+        if entry is None:
+            self.statusBar().showMessage(
+                f"Инструмент {sec_code} не найден", 5000
+            )
+            return
+
+        # Создаём DataLoader
+        self._data_loader = DataLoader(
+            self._db_manager, sec_code, padding_factor=2
+        )
+
+        # Устанавливаем видимое окно: последние N дней
+        now = datetime.now()
+        start = now - timedelta(days=days_back)
+
+        # Загружаем данные через DataLoader
+        loaded = self._data_loader.set_visible_range(start, now)
+
+        if not loaded:
+            self.statusBar().showMessage(
+                f"Нет данных для {sec_code}", 5000
+            )
+            return
+
+        # Отображаем на графике
+        self._chart_widget.set_candles(loaded)
+        self._chart_widget.set_visible_range(
+            self._data_loader.visible_start,
+            self._data_loader.visible_end,
+        )
+
+        # Регистрируем callback на изменение видимого диапазона
+        self._chart_widget.set_on_visible_range_changed(
+            self._on_chart_visible_range_changed,
+        )
+
+        self.statusBar().showMessage(
+            f"Загружен {sec_code}: "
+            f"{len(self._data_loader.visible_candles)} свечей в окне, "
+            f"{len(loaded)} всего загружено",
+            5000,
+        )
+
+    def _on_chart_visible_range_changed(
+        self, start: datetime, end: datetime
+    ) -> None:
+        """
+        Обрабатывает изменение видимого диапазона на графике.
+
+        Обновляет DataLoader и при необходимости догружает данные.
+        """
+        if self._data_loader is None:
+            return
+
+        # Обновляем видимое окно в DataLoader
+        loaded = self._data_loader.set_visible_range(start, end)
+
+        # Если данные изменились — обновляем график
+        if loaded:
+            self._chart_widget.set_candles(loaded)
+
+        self.statusBar().showMessage(
+            f"Диапазон: {start.strftime('%d.%m %H:%M')} — "
+            f"{end.strftime('%d.%m %H:%M')}, "
+            f"загружено {len(loaded)} свечей",
+            5000,
+        )
 
     # ------------------------------------------------------------------
     #  Свойства для доступа к дочерним виджетам
