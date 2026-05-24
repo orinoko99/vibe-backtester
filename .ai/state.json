@@ -1,8 +1,8 @@
 {
-  "current_task": "Этап 1.2 — Модуль config.py",
+  "current_task": "Этап 2.1 — Модуль data/models.py",
   "plan": [
-    "Создать src/utils/config.py с путями к БД и настройками",
-    "Написать тесты для config.py"
+    "Создать src/data/models.py с Pydantic-моделями свечи и инструмента",
+    "Написать тесты для models.py"
   ],
   "step_index": 1,
   "mode": "LOGGER",

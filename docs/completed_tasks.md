@@ -2,7 +2,11 @@
 
 - [x] **Этап 1.1** — Инициализация проекта — 2026-05-24 — commit d40b289
 
-- [x] **Этап 1.2** — Модуль config.py — 2026-05-24
+- [x] **Этап 1.2** — Модуль config.py — 2026-05-24 — commit adfcea2
+
+- [x] **Этап 2.1** — Модуль data/models.py — 2026-05-24
+  - Создан `src/data/models.py`: Pydantic-модели Candle и InstrumentInfo
+  - Написаны и пройдены тесты (`tests/test_models.py` — 29 тестов)
   - Создан `src/utils/config.py` с путями к БД, настройками окна и графика
   - Написаны и пройдены тесты (`tests/test_config.py` — 23 теста)
   - Установлены зависимости: PySide6, polars, lightweight-charts
