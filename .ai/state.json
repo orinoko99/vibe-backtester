@@ -1,8 +1,8 @@
 {
-  "current_task": "Этап 2.1 — Модуль data/models.py",
+  "current_task": "Этап 2.2 — Модуль data/database.py",
   "plan": [
-    "Создать src/data/models.py с Pydantic-моделями свечи и инструмента",
-    "Написать тесты для models.py"
+    "Создать src/data/database.py — подключение к SQLite, получение списка таблиц, чтение свечей",
+    "Написать тесты для database.py (с моками БД)"
   ],
   "step_index": 1,
   "mode": "LOGGER",

@@ -4,7 +4,11 @@
 
 - [x] **Этап 1.2** — Модуль config.py — 2026-05-24 — commit adfcea2
 
-- [x] **Этап 2.1** — Модуль data/models.py — 2026-05-24
+- [x] **Этап 2.1** — Модуль data/models.py — 2026-05-24 — commit cd0ba30
+
+- [x] **Этап 2.2** — Модуль data/database.py — 2026-05-24
+  - Создан `src/data/database.py`: DatabaseManager, поиск инструментов, загрузка свечей
+  - Написаны и пройдены тесты (`tests/test_database.py` — 23 теста)
   - Создан `src/data/models.py`: Pydantic-модели Candle и InstrumentInfo
   - Написаны и пройдены тесты (`tests/test_models.py` — 29 тестов)
   - Создан `src/utils/config.py` с путями к БД, настройками окна и графика
