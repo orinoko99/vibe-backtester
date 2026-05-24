@@ -32,70 +32,7 @@ from PySide6.QtWidgets import (
 from src.data.database import DatabaseManager
 from src.data.loader import DataLoader
 from src.gui.chart_widget import ChartWidget
-
-
-class InstrumentPanel(QDockWidget):
-    """
-    Панель выбора инструментов и таймфреймов.
-
-    Пока содержит заглушку. В дальнейшем:
-    - выпадающий список инструментов
-    - выбор таймфрейма
-    - поиск по коду
-    """
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__("Инструменты", parent)
-
-        # Содержимое панели
-        container = QWidget()
-        layout = QVBoxLayout(container)
-        label = QLabel("Список инструментов\n(будет реализовано)")
-        label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(label)
-        layout.addStretch()
-        self.setWidget(container)
-
-        # Настройки панели
-        self.setMinimumWidth(200)
-        self.setMaximumWidth(350)
-        self.setFeatures(
-            QDockWidget.DockWidgetMovable
-            | QDockWidget.DockWidgetFloatable
-        )
-
-
-class IndicatorsPanel(QDockWidget):
-    """
-    Панель добавления индикаторов на график.
-
-    Пока содержит заглушку. В дальнейшем:
-    - список доступных индикаторов
-    - кнопка добавления на график
-    - настройки параметров индикатора
-    """
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__("Индикаторы", parent)
-
-        container = QWidget()
-        layout = QVBoxLayout(container)
-        label = QLabel("Панель индикаторов\n(будет реализовано)")
-        label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(label)
-        layout.addStretch()
-        self.setWidget(container)
-
-        self.setMinimumWidth(180)
-        self.setMaximumWidth(300)
-        self.setFeatures(
-            QDockWidget.DockWidgetMovable
-            | QDockWidget.DockWidgetFloatable
-        )
-
-
-
-
+from src.gui.instrument_panel import InstrumentPanel as InstrumentPanelWidget
 
 class MainWindow(QMainWindow):
     """
@@ -206,10 +143,40 @@ class MainWindow(QMainWindow):
         - панель инструментов (слева)
         - панель индикаторов (справа)
         """
-        self._instrument_panel = InstrumentPanel(self)
+        # Панель инструментов (QWidget из instrument_panel.py, обёрнутый в QDockWidget)
+        self._instrument_panel = QDockWidget("Инструменты", self)
+        self._instrument_widget = InstrumentPanelWidget(
+            self._db_manager, self
+        )
+        self._instrument_panel.setWidget(self._instrument_widget)
+        self._instrument_panel.setMinimumWidth(220)
+        self._instrument_panel.setMaximumWidth(350)
+        self._instrument_panel.setFeatures(
+            QDockWidget.DockWidgetMovable
+            | QDockWidget.DockWidgetFloatable
+        )
         self.addDockWidget(Qt.LeftDockWidgetArea, self._instrument_panel)
 
-        self._indicators_panel = IndicatorsPanel(self)
+        # Подключаем сигнал выбора инструмента
+        self._instrument_widget.instrument_selected.connect(
+            self.load_instrument
+        )
+
+        # Панель индикаторов (заглушка)
+        self._indicators_panel = QDockWidget("Индикаторы", self)
+        indicators_container = QWidget()
+        indicators_layout = QVBoxLayout(indicators_container)
+        indicators_label = QLabel("Панель индикаторов\n(будет реализовано)")
+        indicators_label.setAlignment(Qt.AlignCenter)
+        indicators_layout.addWidget(indicators_label)
+        indicators_layout.addStretch()
+        self._indicators_panel.setWidget(indicators_container)
+        self._indicators_panel.setMinimumWidth(180)
+        self._indicators_panel.setMaximumWidth(300)
+        self._indicators_panel.setFeatures(
+            QDockWidget.DockWidgetMovable
+            | QDockWidget.DockWidgetFloatable
+        )
         self.addDockWidget(
             Qt.RightDockWidgetArea, self._indicators_panel
         )
@@ -357,15 +324,15 @@ class MainWindow(QMainWindow):
         return self._chart_widget
 
     @property
-    def instrument_panel(self) -> InstrumentPanel:
+    def instrument_panel(self) -> QDockWidget:
         """
-        Возвращает панель выбора инструментов.
+        Возвращает док-панель выбора инструментов.
         """
         return self._instrument_panel
 
     @property
-    def indicators_panel(self) -> IndicatorsPanel:
+    def indicators_panel(self) -> QDockWidget:
         """
-        Возвращает панель индикаторов.
+        Возвращает док-панель индикаторов.
         """
         return self._indicators_panel

@@ -1,24 +1,24 @@
 {
-  "current_task": "Этап 3.3 — GUI: интерактивность графика",
+  "current_task": "Этап 3.4 — GUI: панель выбора инструментов",
   "plan": [
-    "Настроить zoom/pan в ChartWidget (подписка на события изменения видимого диапазона)",
-    "Подключить DataLoader к ChartWidget для динамической подгрузки",
-    "Добавить тесты интеграции"
+    "Реализовать InstrumentPanel: список инструментов, выбор, поиск по коду",
+    "Подключить выбор инструмента к MainWindow.load_instrument",
+    "Написать тесты"
   ],
   "step_index": 2,
   "mode": "LOGGER",
-  "status": "done",
+  "status": "logging",
   "attempts": 0,
   "tests": {
     "written": true,
-    "last_result": "pass"
+    "last_result": "117 passed"
   },
   "review": {
     "done": true
   },
   "logging": {
-    "bugs_recorded": true,
-    "fixes_recorded": true
+    "bugs_recorded": false,
+    "fixes_recorded": false
   },
   "git": {
     "committed": false,

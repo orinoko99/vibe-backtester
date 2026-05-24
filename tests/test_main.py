@@ -17,12 +17,11 @@ from PySide6.QtWidgets import QApplication, QStatusBar
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from PySide6.QtWidgets import QDockWidget
+
 from src.gui.chart_widget import ChartWidget
-from src.gui.main_window import (
-    IndicatorsPanel,
-    InstrumentPanel,
-    MainWindow,
-)
+from src.gui.instrument_panel import InstrumentPanel
+from src.gui.main_window import MainWindow
 
 
 @pytest.fixture(scope="module")
@@ -66,7 +65,7 @@ class TestMainWindowComponents:
     def test_has_instrument_panel(self, app: QApplication) -> None:
         window = MainWindow()
         panel = window.instrument_panel
-        assert isinstance(panel, InstrumentPanel)
+        assert isinstance(panel, QDockWidget)
         assert panel.windowTitle() == "Инструменты"
         assert window.dockWidgetArea(panel) == Qt.LeftDockWidgetArea
         window.close()
@@ -74,7 +73,7 @@ class TestMainWindowComponents:
     def test_has_indicators_panel(self, app: QApplication) -> None:
         window = MainWindow()
         panel = window.indicators_panel
-        assert isinstance(panel, IndicatorsPanel)
+        assert isinstance(panel, QDockWidget)
         assert panel.windowTitle() == "Индикаторы"
         assert window.dockWidgetArea(panel) == Qt.RightDockWidgetArea
         window.close()
