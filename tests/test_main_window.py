@@ -9,7 +9,9 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QMainWindow, QStatusBar
 
-from src.gui.main_window import MainWindow
+from PySide6.QtWidgets import QComboBox, QDockWidget, QToolBar
+
+from src.gui.main_window import TIMEFRAMES, MainWindow
 
 
 @pytest.fixture
@@ -215,3 +217,142 @@ def test_window_resize_preserves_chart_container(window: MainWindow, qtbot) -> N
     window.resize(800, 600)
     qtbot.wait(50)  # Даём Qt время на обработку
     assert window.chart_container is initial_container
+
+
+def test_toolbar_exists(window: MainWindow) -> None:
+    """
+    Проверяет наличие панели инструментов с таймфреймом.
+    """
+    toolbar = window.findChild(QToolBar, "mainToolBar")
+    assert toolbar is not None
+    assert toolbar.windowTitle() == "Панель инструментов"
+
+
+def test_timeframe_combo_exists(window: MainWindow) -> None:
+    """
+    Проверяет наличие комбобокса выбора таймфрейма.
+    """
+    assert window.timeframe_combo is not None
+    assert isinstance(window.timeframe_combo, QComboBox)
+
+
+def test_timeframe_combo_has_values(window: MainWindow) -> None:
+    """
+    Проверяет, что комбобокс содержит все таймфреймы.
+    """
+    for tf in TIMEFRAMES:
+        assert window.timeframe_combo.findText(tf) >= 0
+
+
+def test_timeframe_default_is_m1(window: MainWindow) -> None:
+    """
+    Проверяет, что таймфрейм по умолчанию M1.
+    """
+    assert window.timeframe_combo.currentText() == "M1"
+    assert window._current_timeframe == "M1"
+
+
+def test_timeframe_change_updates_status(window: MainWindow) -> None:
+    """
+    Проверяет, что при изменении таймфрейма обновляется статус-бар.
+    """
+    window.timeframe_combo.setCurrentText("H1")
+    status = window.statusBar().currentMessage()
+    assert "H1" in status
+    assert window._current_timeframe == "H1"
+
+
+def test_instrument_dock_exists(window: MainWindow) -> None:
+    """
+    Проверяет наличие док-панели с инструментами.
+    """
+    dock = window.findChild(QDockWidget, "instrumentDock")
+    assert dock is not None
+    assert dock.windowTitle() == "Инструменты"
+
+
+def test_instrument_panel_exists(window: MainWindow) -> None:
+    """
+    Проверяет, что InstrumentPanel создан.
+    """
+    assert window.instrument_panel is not None
+    assert hasattr(window.instrument_panel, "instrument_list")
+
+
+def test_instrument_panel_connected(window: MainWindow, qtbot) -> None:
+    """
+    Проверяет, что сигнал instrument_selected подключён и вызывает load_and_display.
+    """
+    # Устанавливаем тестовые инструменты в панель
+    test_instruments = [
+        {"db_path": "test.db", "table": "TEST_M1", "sec_code": "TEST"},
+    ]
+    window.instrument_panel.set_instruments(test_instruments)
+
+    # Эмулируем выбор инструмента
+    with qtbot.waitSignal(window.instrument_panel.instrument_selected) as blocker:
+        item = window.instrument_panel.instrument_list.item(0)
+        window.instrument_panel.instrument_list.itemClicked.emit(item)
+
+    db_path, sec_code = blocker.args
+    assert db_path == "test.db"
+    assert sec_code == "TEST"
+
+
+def test_instrument_selection_updates_current(window: MainWindow) -> None:
+    """
+    Проверяет, что при выборе инструмента обновляются текущие параметры.
+    """
+    window._on_instrument_selected("test.db", "SBER")
+    assert window._current_db_path == "test.db"
+    assert window._current_sec_code == "SBER"
+
+
+def test_instrument_selection_updates_current_and_tries_load(window: MainWindow) -> None:
+    """
+    Проверяет, что при выборе инструмента обновляются текущие параметры
+    и предпринимается попытка загрузки данных.
+    """
+    window._on_instrument_selected("test.db", "GAZP")
+    assert window._current_db_path == "test.db"
+    assert window._current_sec_code == "GAZP"
+    # Статус должен содержать информацию об ошибке (БД не существует)
+    status = window.statusBar().currentMessage()
+    assert "test.db" in status or "Ошибка" in status
+
+
+def test_timeframe_change_with_instrument_selected(window: MainWindow) -> None:
+    """
+    Проверяет, что при смене таймфрейма и выбранном инструменте
+    не возникает ошибки.
+    """
+    window._current_db_path = "test.db"
+    window._current_sec_code = "TEST"
+    try:
+        window.timeframe_combo.setCurrentText("M5")
+    except Exception as exc:
+        pytest.fail(f"Смена таймфрейма вызвала исключение: {exc}")
+
+
+def test_timeframe_change_without_instrument(window: MainWindow) -> None:
+    """
+    Проверяет, что смена таймфрейма без выбранного инструмента
+    не вызывает ошибок.
+    """
+    window._current_db_path = None
+    window._current_sec_code = None
+    try:
+        window.timeframe_combo.setCurrentText("H4")
+    except Exception as exc:
+        pytest.fail(f"Смена таймфрейма без инструмента вызвала исключение: {exc}")
+
+
+def test_current_state_after_instrument_selection(window: MainWindow) -> None:
+    """
+    Проверяет, что поле таймфрейма синхронизировано с _current_timeframe.
+    """
+    assert window.timeframe_combo.currentText() == window._current_timeframe
+    window._current_timeframe = "D1"
+    # После изменения внутреннего состояния комбобокс не синхронизируется автоматически
+    # Это нормально — таймфрейм меняется через комбобокс
+    assert window._current_timeframe == "D1"

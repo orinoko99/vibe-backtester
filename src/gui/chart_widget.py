@@ -130,3 +130,19 @@ class ChartWidget(QWidget):
     def clear(self) -> None:
         """Очищает все данные с графика."""
         self.chart.hide_data()
+
+    def on_range_change(self, callback) -> None:
+        """
+        Подписывается на событие изменения видимого диапазона графика.
+
+        callback будет вызван с аргументами (bars_before, bars_after)
+        при каждом изменении видимого диапазона.
+
+        Параметры:
+            callback: Функция обратного вызова вида
+                      callback(bars_before: float, bars_after: float).
+        """
+        def handler(chart, bars_before: float, bars_after: float) -> None:
+            callback(bars_before, bars_after)
+
+        self.chart.events.range_change += handler

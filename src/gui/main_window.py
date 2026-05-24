@@ -8,14 +8,30 @@
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
+    QComboBox,
+    QDockWidget,
+    QLabel,
     QMainWindow,
     QStatusBar,
+    QToolBar,
     QVBoxLayout,
     QWidget,
 )
 
+from datetime import timedelta
+
+import polars as pl
+
 from src.data.loader import load_candles
 from src.gui.chart_widget import ChartWidget
+from src.gui.instrument_panel import InstrumentPanel
+
+
+# Поддерживаемые таймфреймы
+TIMEFRAMES: list[str] = ["M1", "M5", "M10", "M15", "M30", "H1", "H4", "D1"]
+
+# Количество экранов для подгрузки данных с каждой стороны
+PADDING_SCREENS: int = 2
 
 
 class MainWindow(QMainWindow):
@@ -25,9 +41,10 @@ class MainWindow(QMainWindow):
     Содержит:
     - Центральный виджет-контейнер для графика (chart_container).
     - ChartWidget с интерактивным графиком.
+    - InstrumentPanel в док-виджете слева (выбор инструмента).
+    - Панель инструментов с выбором таймфрейма.
     - Строку меню (File, View, Help).
     - Строку статуса.
-    - Возможность добавления док-панелей в будущем.
     """
 
     def __init__(self) -> None:
@@ -39,11 +56,27 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1280, 720)
         self.resize(1600, 900)
 
+        # Текущие параметры
+        self._current_db_path: str | None = None
+        self._current_sec_code: str | None = None
+        self._current_timeframe: str = "M1"
+
+        # Параметры динамической подгрузки данных
+        self._loaded_start: str | None = None  # минимальная загруженная дата
+        self._loaded_end: str | None = None    # максимальная загруженная дата
+        self._last_visible_range: tuple[int, int] | None = None  # bars_before, bars_after
+
         # Создаём центральный виджет-контейнер для графика
         self._create_central_widget()
 
         # Создаём строку меню
         self._create_menu_bar()
+
+        # Создаём панель инструментов
+        self._create_toolbar()
+
+        # Создаём док-панель выбора инструмента
+        self._create_instrument_dock()
 
         # Создаём строку статуса
         self._create_status_bar()
@@ -106,6 +139,69 @@ class MainWindow(QMainWindow):
         self.action_about.triggered.connect(self._show_about)
         help_menu.addAction(self.action_about)
 
+    def _create_toolbar(self) -> None:
+        """Создаёт панель инструментов с выбором таймфрейма."""
+        toolbar = QToolBar("Панель инструментов")
+        toolbar.setObjectName("mainToolBar")
+        toolbar.setMovable(False)
+        self.addToolBar(toolbar)
+
+        # Метка выбора таймфрейма
+        tf_label = QLabel("Таймфрейм:")
+        toolbar.addWidget(tf_label)
+
+        # Комбобокс выбора таймфрейма
+        self.timeframe_combo = QComboBox()
+        self.timeframe_combo.addItems(TIMEFRAMES)
+        self.timeframe_combo.setCurrentText(self._current_timeframe)
+        self.timeframe_combo.currentTextChanged.connect(self._on_timeframe_changed)
+        toolbar.addWidget(self.timeframe_combo)
+
+    def _create_instrument_dock(self) -> None:
+        """Создаёт док-панель со списком инструментов."""
+        self.instrument_dock = QDockWidget("Инструменты", self)
+        self.instrument_dock.setObjectName("instrumentDock")
+        self.instrument_dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
+
+        # Панель выбора инструментов
+        self.instrument_panel = InstrumentPanel()
+        self.instrument_panel.instrument_selected.connect(self._on_instrument_selected)
+        self.instrument_dock.setWidget(self.instrument_panel)
+
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.instrument_dock)
+
+    def _on_instrument_selected(self, db_path: str, sec_code: str) -> None:
+        """
+        Обрабатывает выбор инструмента в панели.
+
+        Загружает данные выбранного инструмента и отображает на графике.
+
+        Параметры:
+            db_path: Путь к БД инструмента.
+            sec_code: Код инструмента.
+        """
+        self._current_db_path = db_path
+        self._current_sec_code = sec_code
+
+        self.set_status_message(f"Выбран инструмент: {sec_code}")
+        self.load_and_display(db_path, sec_code)
+
+    def _on_timeframe_changed(self, timeframe: str) -> None:
+        """
+        Обрабатывает изменение таймфрейма.
+
+        Если инструмент уже выбран — перезагружает данные с новым таймфреймом.
+
+        Параметры:
+            timeframe: Новый таймфрейм (например 'M5', 'H1').
+        """
+        self._current_timeframe = timeframe
+        self.set_status_message(f"Таймфрейм изменён: {timeframe}")
+
+        # Если инструмент выбран — перезагружаем с новым таймфреймом
+        if self._current_db_path and self._current_sec_code:
+            self.load_and_display(self._current_db_path, self._current_sec_code)
+
     def _create_status_bar(self) -> None:
         """Создаёт строку статуса с приветственным сообщением."""
         status_bar = QStatusBar()
@@ -166,12 +262,146 @@ class MainWindow(QMainWindow):
         self.chart_container.setLayout(container_layout)
         container_layout.addWidget(self.chart_widget)
 
+        # Подписываемся на событие изменения видимого диапазона
+        self.chart_widget.on_range_change(self._on_chart_range_change)
+
+    def _on_chart_range_change(self, bars_before: float, bars_after: float) -> None:
+        """
+        Обрабатывает изменение видимого диапазона графика.
+
+        Если данных с одной из сторон меньше порога (PADDING_SCREENS),
+        загружает дополнительный блок данных.
+
+        Параметры:
+            bars_before: Количество свечей до видимой области.
+            bars_after: Количество свечей после видимой области.
+        """
+        # Сохраняем последние значения для оценки размера видимой области
+        self._last_visible_range = (int(bars_before), int(bars_after))
+
+        # Если инструмент не выбран — игнорируем
+        if not self._current_db_path or not self._current_sec_code:
+            return
+
+        # Оцениваем размер видимой области в свечах
+        # (примерно bars_before + bars_after изменилось с прошлого раза)
+        visible_bars = max(50, int(bars_before + bars_after) // 4)
+        padding_bars = visible_bars * PADDING_SCREENS
+
+        # Проверяем, нужно ли подгрузить данные слева
+        if bars_before < padding_bars and bars_before >= 0:
+            self._load_data_before(bars_before, visible_bars)
+
+        # Проверяем, нужно ли подгрузить данные справа
+        if bars_after < padding_bars and bars_after >= 0:
+            self._load_data_after(bars_after, visible_bars)
+
+    def _load_data_before(self, bars_before: float, visible_bars: int) -> None:
+        """
+        Загружает дополнительный блок данных перед видимой областью.
+
+        Параметры:
+            bars_before: Количество свечей до видимой области.
+            visible_bars: Размер видимой области в свечах.
+        """
+        if not self._current_db_path or not self._current_sec_code or not self._loaded_start:
+            return
+
+        try:
+            # Загружаем данные на PADDING_SCREENS экранов раньше
+            # Конвертируем количество свечей во временной интервал
+            minutes_per_bar = self._get_minutes_per_bar()
+            load_minutes = visible_bars * minutes_per_bar * PADDING_SCREENS
+
+            start_dt = pl.Series([self._loaded_start]).str.to_datetime("%Y-%m-%d %H:%M:%S")[0]
+            new_start = start_dt - timedelta(minutes=load_minutes)
+            new_start_str = new_start.strftime("%Y-%m-%d %H:%M:%S")
+
+            df = load_candles(
+                db_path=self._current_db_path,
+                sec_code=self._current_sec_code,
+                start_date=new_start_str,
+                end_date=self._loaded_start,
+                timeframe=self._current_timeframe,
+            )
+
+            if not df.is_empty():
+                self.chart_widget.load_candles(df)
+                self._loaded_start = new_start_str
+                self.set_status_message(
+                    f"Подгружено {len(df)} свечей слева для {self._current_sec_code}"
+                )
+
+        except Exception:
+            pass
+
+    def _load_data_after(self, bars_after: float, visible_bars: int) -> None:
+        """
+        Загружает дополнительный блок данных после видимой области.
+
+        Параметры:
+            bars_after: Количество свечей после видимой области.
+            visible_bars: Размер видимой области в свечах.
+        """
+        if not self._current_db_path or not self._current_sec_code or not self._loaded_end:
+            return
+
+        try:
+            minutes_per_bar = self._get_minutes_per_bar()
+            load_minutes = visible_bars * minutes_per_bar * PADDING_SCREENS
+
+            end_dt = pl.Series([self._loaded_end]).str.to_datetime("%Y-%m-%d %H:%M:%S")[0]
+            new_end = end_dt + timedelta(minutes=load_minutes)
+            new_end_str = new_end.strftime("%Y-%m-%d %H:%M:%S")
+
+            df = load_candles(
+                db_path=self._current_db_path,
+                sec_code=self._current_sec_code,
+                start_date=self._loaded_end,
+                end_date=new_end_str,
+                timeframe=self._current_timeframe,
+            )
+
+            if not df.is_empty():
+                self.chart_widget.load_candles(df)
+                self._loaded_end = new_end_str
+                self.set_status_message(
+                    f"Подгружено {len(df)} свечей справа для {self._current_sec_code}"
+                )
+
+        except Exception:
+            pass
+
+    def _get_minutes_per_bar(self) -> int:
+        """
+        Возвращает количество минут в одной свече для текущего таймфрейма.
+        """
+        tf = self._current_timeframe
+        if tf == "M1":
+            return 1
+        elif tf == "M5":
+            return 5
+        elif tf == "M10":
+            return 10
+        elif tf == "M15":
+            return 15
+        elif tf == "M30":
+            return 30
+        elif tf == "H1":
+            return 60
+        elif tf == "H4":
+            return 240
+        elif tf == "D1":
+            return 1440
+        return 1
+
     def load_and_display(
         self,
         db_path: str,
         sec_code: str,
         start_date: str | None = None,
         end_date: str | None = None,
+        timeframe: str | None = None,
     ) -> None:
         """
         Загружает свечные данные из SQLite БД и отображает их на графике.
@@ -181,9 +411,14 @@ class MainWindow(QMainWindow):
             sec_code: Код инструмента (например 'AAH6', 'SiH6').
             start_date: Начальная дата фильтрации (включительно).
             end_date: Конечная дата фильтрации (включительно).
+            timeframe: Таймфрейм (M1, M5, H1 и т.д.). Если None — используется текущий.
         """
         try:
             self.set_status_message(f"Загрузка данных {sec_code}...")
+
+            # Используем переданный таймфрейм или текущий
+            if timeframe is None:
+                timeframe = self._current_timeframe
 
             # Загружаем данные через loader
             df = load_candles(
@@ -191,6 +426,7 @@ class MainWindow(QMainWindow):
                 sec_code=sec_code,
                 start_date=start_date,
                 end_date=end_date,
+                timeframe=timeframe,
             )
 
             if df.is_empty():
@@ -207,6 +443,13 @@ class MainWindow(QMainWindow):
             self.set_status_message(
                 f"Загружено {count} свечей для {sec_code}"
             )
+
+            # Сохраняем диапазон загруженных данных для динамической подгрузки
+            if not df.is_empty():
+                dates = df["date"]
+                if len(dates) > 0:
+                    self._loaded_start = str(dates[0])
+                    self._loaded_end = str(dates[-1])
 
         except FileNotFoundError as exc:
             self.set_status_message(f"Ошибка: {exc}")
