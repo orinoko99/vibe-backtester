@@ -14,6 +14,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from src.data.loader import load_candles
+from src.gui.chart_widget import ChartWidget
+
 
 class MainWindow(QMainWindow):
     """
@@ -21,6 +24,7 @@ class MainWindow(QMainWindow):
 
     Содержит:
     - Центральный виджет-контейнер для графика (chart_container).
+    - ChartWidget с интерактивным графиком.
     - Строку меню (File, View, Help).
     - Строку статуса.
     - Возможность добавления док-панелей в будущем.
@@ -43,6 +47,9 @@ class MainWindow(QMainWindow):
 
         # Создаём строку статуса
         self._create_status_bar()
+
+        # Инициализируем график
+        self._init_chart()
 
     def _create_central_widget(self) -> None:
         """
@@ -129,6 +136,82 @@ class MainWindow(QMainWindow):
             "Приложение для тестирования торговых стратегий "
             "на исторических данных с интерактивными графиками.",
         )
+
+    def _init_chart(self) -> None:
+        """
+        Создаёт ChartWidget и встраивает его в chart_container.
+
+        ChartWidget использует lightweight-charts (через QtChart и QWebEngineView)
+        для отображения интерактивного свечного графика.
+        """
+        # Создаём виджет графика с родительским контейнером
+        self.chart_widget = ChartWidget(parent=self.chart_container)
+
+        # Заменяем содержимое chart_container на ChartWidget
+        # (удаляем старый layout контейнера и создаём новый)
+        container_layout = QVBoxLayout()
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(0)
+
+        # Если у контейнера уже есть layout, удаляем его
+        old_layout = self.chart_container.layout()
+        if old_layout is not None:
+            # Очищаем старый layout
+            while old_layout.count():
+                item = old_layout.takeAt(0)
+                widget = item.widget()
+                if widget is not None:
+                    widget.setParent(None)
+
+        self.chart_container.setLayout(container_layout)
+        container_layout.addWidget(self.chart_widget)
+
+    def load_and_display(
+        self,
+        db_path: str,
+        sec_code: str,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> None:
+        """
+        Загружает свечные данные из SQLite БД и отображает их на графике.
+
+        Параметры:
+            db_path: Путь к файлу SQLite базы данных.
+            sec_code: Код инструмента (например 'AAH6', 'SiH6').
+            start_date: Начальная дата фильтрации (включительно).
+            end_date: Конечная дата фильтрации (включительно).
+        """
+        try:
+            self.set_status_message(f"Загрузка данных {sec_code}...")
+
+            # Загружаем данные через loader
+            df = load_candles(
+                db_path=db_path,
+                sec_code=sec_code,
+                start_date=start_date,
+                end_date=end_date,
+            )
+
+            if df.is_empty():
+                self.set_status_message(f"Нет данных для {sec_code}")
+                return
+
+            # Отображаем данные на графике
+            self.chart_widget.load_candles(df)
+            self.chart_widget.fit()
+
+            # Обновляем заголовок и статус
+            self.chart_widget.set_title(sec_code)
+            count = len(df)
+            self.set_status_message(
+                f"Загружено {count} свечей для {sec_code}"
+            )
+
+        except FileNotFoundError as exc:
+            self.set_status_message(f"Ошибка: {exc}")
+        except ValueError as exc:
+            self.set_status_message(f"Ошибка: {exc}")
 
     def set_status_message(self, message: str) -> None:
         """

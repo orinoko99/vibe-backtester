@@ -1,8 +1,9 @@
 {
-  "current_task": "Этап 1.4 — Интегрировать lightweight-charts в PySide6 + тесты",
+  "current_task": "Этап 1.5 — Загрузка и отображение свечей из БД на графике + тесты",
   "plan": [
-    "Написать src/gui/chart_widget.py",
-    "Написать tests/test_chart_widget.py",
+    "Обновить MainWindow с init_chart и load_and_display",
+    "Создать src/main.py как точку входа",
+    "Написать tests/test_integration.py",
     "Запустить тесты",
     "Исправить ошибки если есть",
     "Сделать ревью",
