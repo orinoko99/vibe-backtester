@@ -1,14 +1,14 @@
 {
-  "current_task": "Этап 1.3 — Реализовать главное окно PySide6 с пустым контейнером под график + тесты",
+  "current_task": "Этап 1.4 — Интегрировать lightweight-charts в PySide6 + тесты",
   "plan": [
-    "Написать src/gui/main_window.py",
-    "Написать tests/test_main_window.py",
+    "Написать src/gui/chart_widget.py",
+    "Написать tests/test_chart_widget.py",
     "Запустить тесты",
     "Исправить ошибки если есть",
     "Сделать ревью",
     "Зафиксировать результат"
   ],
-  "step_index": 5,
+  "step_index": 6,
   "mode": "GIT",
   "status": "done",
   "attempts": 0,
