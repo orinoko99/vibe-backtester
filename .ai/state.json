@@ -1,27 +1,27 @@
 {
-  "current_task": "Этап 1.7 — Инструменты рисования и текстовые метки на графике + тесты",
+  "current_task": "Этап 2.1 — Реализовать движок бэктестинга (одиночные стратегии) + тесты",
   "plan": [
-    "Изучить API lightweight-charts на предмет рисования",
-    "Расширить ChartWidget методами рисования и маркеров",
-    "Создать DrawingToolbar (панель инструментов рисования)",
-    "Интегрировать панель в MainWindow",
-    "Написать тесты",
+    "Создать базовый класс Strategy с интерфейсом init/next",
+    "Создать BacktestEngine для прогона стратегии по данным",
+    "Реализовать трекинг позиций и сделок (Order, Position, Trade)",
+    "Реализовать расчёт метрик производительности (total return, Sharpe, max drawdown)",
+    "Написать тесты для Strategy, BacktestEngine и метрик",
     "Запустить тесты и зафиксировать результат"
   ],
   "step_index": 6,
-  "mode": "GIT",
-  "status": "done",
+  "mode": "REVIEWER",
+  "status": "testing",
   "attempts": 0,
   "tests": {
     "written": true,
     "last_result": "pass"
   },
   "review": {
-    "done": true
+    "done": false
   },
   "logging": {
-    "bugs_recorded": true,
-    "fixes_recorded": true
+    "bugs_recorded": false,
+    "fixes_recorded": false
   },
   "git": {
     "committed": false,
