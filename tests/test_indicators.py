@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import numpy as np
 import polars as pl
 import pytest
 
@@ -779,3 +780,315 @@ def test_vp_value_area_percentage_custom() -> None:
     # При 100% VA должен покрыть все ценовые уровни
     assert summary.val == pytest.approx(float(data["low"].min()), rel=1e-3) or summary.val < float(data["low"].max())
     assert summary.vah == pytest.approx(float(data["high"].max()), rel=1e-3) or summary.vah > float(data["high"].min())
+
+
+# ══════════════════════════════════════════════
+# Тесты наложенных индикаторов (overlay)
+# ══════════════════════════════════════════════
+
+
+from src.indicators.overlay import SMA, EMA, BollingerBands
+
+
+@pytest.fixture
+def overlay_data() -> pl.DataFrame:
+    """Фикстура: 30 свечей с линейно растущей ценой."""
+    return pl.DataFrame({
+        "date": [datetime(2025, 1, 1, 10, i) for i in range(30)],
+        "open": [float(100 + i) for i in range(30)],
+        "high": [float(101 + i) for i in range(30)],
+        "low": [float(99 + i) for i in range(30)],
+        "close": [float(100 + i) for i in range(30)],
+        "volume": [1000] * 30,
+    })
+
+
+@pytest.fixture
+def volatile_data() -> pl.DataFrame:
+    """Фикстура: волатильные данные для Bollinger."""
+    closes = [100.0, 102.0, 98.0, 105.0, 95.0, 110.0, 90.0, 115.0, 85.0, 120.0,
+              100.0, 103.0, 97.0, 106.0, 94.0, 111.0, 89.0, 116.0, 84.0, 121.0,
+              101.0, 104.0, 96.0, 107.0, 93.0, 112.0, 88.0, 117.0, 83.0, 122.0]
+    return pl.DataFrame({
+        "date": [datetime(2025, 1, 1, 10, i) for i in range(30)],
+        "open": closes,
+        "high": [c + 2 for c in closes],
+        "low": [c - 2 for c in closes],
+        "close": closes,
+        "volume": [1000] * 30,
+    })
+
+
+# ──────────────────────────────────────────────
+# Тесты SMA
+# ──────────────────────────────────────────────
+
+
+def test_sma_creation() -> None:
+    """Проверяет создание SMA."""
+    sma = SMA()
+    assert sma.name == "SMA"
+    assert sma._params["period"] == 20
+    assert sma.indicator_type == IndicatorType.OVERLAY
+    assert sma.display_name == "SMA(20)"
+
+
+def test_sma_custom_period() -> None:
+    """Проверяет SMA с пользовательским периодом."""
+    sma = SMA(period=50)
+    assert sma._params["period"] == 50
+    assert sma.display_name == "SMA(50)"
+
+
+def test_sma_calculate_returns_indicator_result(overlay_data: pl.DataFrame) -> None:
+    """Проверяет, что SMA.calculate возвращает IndicatorResult."""
+    sma = SMA()
+    result = sma.calculate(overlay_data)
+    assert isinstance(result, IndicatorResult)
+    assert result.overlay is True
+    assert "sma" in result.data.columns
+
+
+def test_sma_values(overlay_data: pl.DataFrame) -> None:
+    """Проверяет численные значения SMA."""
+    sma = SMA(period=5)
+    result = sma.calculate(overlay_data)
+    sma_vals = result.data["sma"].to_list()
+
+    # Первые 4 значения должны быть NaN
+    assert np.isnan(sma_vals[0])
+    assert np.isnan(sma_vals[3])
+    # 5-е значение = среднее первых 5 close (100+101+102+103+104)/5 = 102
+    assert sma_vals[4] == pytest.approx(102.0)
+    # 6-е значение = среднее close[1..5] (101+102+103+104+105)/5 = 103
+    assert sma_vals[5] == pytest.approx(103.0)
+
+
+def test_sma_all_nan_on_short_data() -> None:
+    """Проверяет SMA на данных короче периода."""
+    sma = SMA(period=10)
+    short = pl.DataFrame({
+        "date": [datetime(2025, 1, 1, 10, i) for i in range(5)],
+        "open": [100.0] * 5, "high": [101.0] * 5,
+        "low": [99.0] * 5, "close": [100.0] * 5,
+        "volume": [1000] * 5,
+    })
+    result = sma.calculate(short)
+    sma_vals = result.data["sma"].to_list()
+    assert all(np.isnan(v) for v in sma_vals)
+
+
+def test_sma_constant_values() -> None:
+    """Проверяет SMA на данных с постоянной ценой."""
+    sma = SMA(period=3)
+    data = pl.DataFrame({
+        "date": [datetime(2025, 1, 1, 10, i) for i in range(10)],
+        "open": [100.0] * 10, "high": [100.0] * 10,
+        "low": [100.0] * 10, "close": [100.0] * 10,
+        "volume": [1000] * 10,
+    })
+    result = sma.calculate(data)
+    sma_vals = result.data["sma"].to_list()
+    for i in range(2, 10):
+        assert sma_vals[i] == pytest.approx(100.0)
+
+
+# ──────────────────────────────────────────────
+# Тесты EMA
+# ──────────────────────────────────────────────
+
+
+def test_ema_creation() -> None:
+    """Проверяет создание EMA."""
+    ema = EMA()
+    assert ema.name == "EMA"
+    assert ema._params["period"] == 20
+    assert ema.indicator_type == IndicatorType.OVERLAY
+    assert ema.display_name == "EMA(20)"
+
+
+def test_ema_custom_period() -> None:
+    """Проверяет EMA с пользовательским периодом."""
+    ema = EMA(period=10)
+    assert ema._params["period"] == 10
+    assert ema.display_name == "EMA(10)"
+
+
+def test_ema_calculate_returns_indicator_result(overlay_data: pl.DataFrame) -> None:
+    """Проверяет, что EMA.calculate возвращает IndicatorResult."""
+    ema = EMA()
+    result = ema.calculate(overlay_data)
+    assert isinstance(result, IndicatorResult)
+    assert result.overlay is True
+    assert "ema" in result.data.columns
+
+
+def test_ema_values(overlay_data: pl.DataFrame) -> None:
+    """Проверяет численные значения EMA."""
+    ema = EMA(period=3)
+    result = ema.calculate(overlay_data)
+    ema_vals = result.data["ema"].to_list()
+
+    # Первые 2 значения — NaN
+    assert np.isnan(ema_vals[0])
+    assert np.isnan(ema_vals[1])
+
+    # 3-е значение = SMA первых 3: (100+101+102)/3 = 101
+    assert ema_vals[2] == pytest.approx(101.0)
+
+    # 4-е значение = 103 * k + 101 * (1-k), k = 2/(3+1) = 0.5
+    # = 103 * 0.5 + 101 * 0.5 = 102
+    assert ema_vals[3] == pytest.approx(102.0)
+
+
+def test_ema_all_nan_on_short_data() -> None:
+    """Проверяет EMA на данных короче периода."""
+    ema = EMA(period=10)
+    short = pl.DataFrame({
+        "date": [datetime(2025, 1, 1, 10, i) for i in range(5)],
+        "open": [100.0] * 5, "high": [101.0] * 5,
+        "low": [99.0] * 5, "close": [100.0] * 5,
+        "volume": [1000] * 5,
+    })
+    result = ema.calculate(short)
+    ema_vals = result.data["ema"].to_list()
+    assert all(np.isnan(v) for v in ema_vals)
+
+
+def test_ema_convergence_to_value() -> None:
+    """Проверяет, что EMA стремится к постоянному значению."""
+    ema = EMA(period=5)
+    data = pl.DataFrame({
+        "date": [datetime(2025, 1, 1, 10, i) for i in range(50)],
+        "open": [100.0] * 50, "high": [100.0] * 50,
+        "low": [100.0] * 50, "close": [100.0] * 50,
+        "volume": [1000] * 50,
+    })
+    result = ema.calculate(data)
+    ema_vals = result.data["ema"].to_list()
+    # Последние значения должны стремиться к 100
+    for v in ema_vals[-5:]:
+        assert v == pytest.approx(100.0, abs=0.001)
+
+
+# ──────────────────────────────────────────────
+# Тесты Bollinger Bands
+# ──────────────────────────────────────────────
+
+
+def test_bb_creation() -> None:
+    """Проверяет создание Bollinger Bands."""
+    bb = BollingerBands()
+    assert bb.name == "BollingerBands"
+    assert bb._params["period"] == 20
+    assert bb._params["std_dev"] == 2.0
+    assert bb.indicator_type == IndicatorType.OVERLAY
+    assert bb.display_name == "BollingerBands(20, 2.0)"
+
+
+def test_bb_custom_params() -> None:
+    """Проверяет Bollinger Bands с пользовательскими параметрами."""
+    bb = BollingerBands(period=10, std_dev=1.5)
+    assert bb._params["period"] == 10
+    assert bb._params["std_dev"] == 1.5
+    assert bb.display_name == "BollingerBands(10, 1.5)"
+
+
+def test_bb_calculate_returns_indicator_result(overlay_data: pl.DataFrame) -> None:
+    """Проверяет, что BB.calculate возвращает IndicatorResult."""
+    bb = BollingerBands()
+    result = bb.calculate(overlay_data)
+    assert isinstance(result, IndicatorResult)
+    assert result.overlay is True
+
+
+def test_bb_has_three_series(overlay_data: pl.DataFrame) -> None:
+    """Проверяет, что BB содержит три ряда: upper, middle, lower."""
+    bb = BollingerBands()
+    result = bb.calculate(overlay_data)
+    assert "bb_upper" in result.data.columns
+    assert "bb_middle" in result.data.columns
+    assert "bb_lower" in result.data.columns
+
+
+def test_bb_middle_equals_sma(overlay_data: pl.DataFrame) -> None:
+    """Проверяет, что средняя линия BB равна SMA."""
+    bb = BollingerBands(period=5)
+    sma = SMA(period=5)
+    bb_result = bb.calculate(overlay_data)
+    sma_result = sma.calculate(overlay_data)
+    # Сравниваем без первых NaN
+    bb_middle = bb_result.data["bb_middle"].to_list()[5:]
+    sma_vals = sma_result.data["sma"].to_list()[5:]
+    for bm, sm in zip(bb_middle, sma_vals):
+        assert bm == pytest.approx(sm)
+
+
+def test_bb_upper_above_lower(overlay_data: pl.DataFrame) -> None:
+    """Проверяет, что верхняя полоса всегда выше нижней."""
+    bb = BollingerBands(period=5)
+    result = bb.calculate(overlay_data)
+    upper = result.data["bb_upper"].to_list()
+    lower = result.data["bb_lower"].to_list()
+    for i in range(5, len(upper)):
+        assert upper[i] >= lower[i], f"На индексе {i}: upper={upper[i]} < lower={lower[i]}"
+
+
+def test_bb_bands_widen_with_volatility(volatile_data: pl.DataFrame) -> None:
+    """Проверяет, что полосы расширяются при высокой волатильности."""
+    bb = BollingerBands(period=5)
+    result = bb.calculate(volatile_data)
+    upper = result.data["bb_upper"].to_list()
+    lower = result.data["bb_lower"].to_list()
+    # Разница между upper и lower должна быть > 0
+    spreads = [upper[i] - lower[i] for i in range(5, len(upper)) if not (np.isnan(upper[i]) or np.isnan(lower[i]))]
+    assert all(s > 0 for s in spreads)
+    # На волатильных данных разброс должен быть заметным
+    assert max(spreads) > 5.0
+
+
+def test_bb_all_nan_on_short_data() -> None:
+    """Проверяет BB на данных короче периода."""
+    bb = BollingerBands(period=10)
+    short = pl.DataFrame({
+        "date": [datetime(2025, 1, 1, 10, i) for i in range(5)],
+        "open": [100.0] * 5, "high": [101.0] * 5,
+        "low": [99.0] * 5, "close": [100.0] * 5,
+        "volume": [1000] * 5,
+    })
+    result = bb.calculate(short)
+    upper = result.data["bb_upper"].to_list()
+    middle = result.data["bb_middle"].to_list()
+    lower = result.data["bb_lower"].to_list()
+    assert all(np.isnan(v) for v in upper)
+    assert all(np.isnan(v) for v in middle)
+    assert all(np.isnan(v) for v in lower)
+
+
+def test_bb_constant_values() -> None:
+    """Проверяет BB на данных с постоянной ценой."""
+    bb = BollingerBands(period=3)
+    data = pl.DataFrame({
+        "date": [datetime(2025, 1, 1, 10, i) for i in range(10)],
+        "open": [100.0] * 10, "high": [100.0] * 10,
+        "low": [100.0] * 10, "close": [100.0] * 10,
+        "volume": [1000] * 10,
+    })
+    result = bb.calculate(data)
+    upper = result.data["bb_upper"].to_list()
+    middle = result.data["bb_middle"].to_list()
+    lower = result.data["bb_lower"].to_list()
+    # При постоянной цене std = 0, все линии = 100
+    for i in range(2, 10):
+        assert middle[i] == pytest.approx(100.0)
+        assert upper[i] == pytest.approx(100.0)
+        assert lower[i] == pytest.approx(100.0)
+
+
+def test_bb_series_names(overlay_data: pl.DataFrame) -> None:
+    """Проверяет имена рядов в IndicatorResult."""
+    bb = BollingerBands()
+    result = bb.calculate(overlay_data)
+    assert "bb_upper" in result.series_names
+    assert "bb_middle" in result.series_names
+    assert "bb_lower" in result.series_names
