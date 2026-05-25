@@ -5,8 +5,6 @@
 Позволяет фильтровать по коду инструмента и выбирать нужный.
 """
 
-from typing import Callable
-
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QHBoxLayout,

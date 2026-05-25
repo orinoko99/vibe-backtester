@@ -147,9 +147,6 @@ class VolumeProfile(BaseIndicator):
             "is_poc": np.arange(len(bin_centers)) == poc_index,
         })
 
-        # Добавляем метки VAH и VAL
-        vah_mask = (bin_centers >= val) & (bin_centers <= vah)
-
         return IndicatorResult(
             data=profile_data,
             series_names={

@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
+import numpy as np
 import polars as pl
 
 
@@ -117,7 +118,7 @@ class BacktestResult:
             self.total_return = (final_equity - initial_equity) / initial_equity * 100.0
 
         returns = (equity[1:] - equity[:-1]) / equity[:-1]
-        returns = returns[~pl.Series(returns).is_nan().to_numpy()]
+        returns = returns[np.isfinite(returns)]
         if len(returns) > 1 and returns.std() > 0:
             self.sharpe_ratio = float(
                 returns.mean() / returns.std() * (252 * 390) ** 0.5

@@ -1,32 +1,29 @@
 {
-  "current_task": "Этап 2.3 — Volume Profile и дополнительные индикаторы",
+  "current_task": "Этап 2.4 — Финальное ревью, оптимизация, README, финальный коммит",
   "plan": [
-    "src/indicators/base.py — Базовый класс индикатора",
-    "src/indicators/volume_profile.py — Volume Profile",
-    "src/indicators/overlay.py — Наложенные индикаторы (SMA, EMA, Bollinger)",
-    "src/indicators/oscillators.py — Осцилляторы (RSI, MACD)",
-    "src/gui/indicators_panel.py — Панель выбора индикаторов в GUI",
-    "src/gui/chart_widget.py — Интеграция индикаторов в график",
-    "Тесты для всех индикаторов + GUI панели",
-    "Обновление файлов: completed_tasks, tests.json, error_log"
+    "Финальное ревью кода",
+    "Оптимизация и исправление найденных проблем",
+    "Создание README.md",
+    "Прогон всех тестов",
+    "Финальный коммит + git push"
   ],
-  "step_index": 6,
-  "mode": "CODER",
-  "status": "coding",
+  "step_index": 5,
+  "mode": "GIT",
+  "status": "committing",
   "attempts": 0,
   "tests": {
-    "written": false,
-    "last_result": null
+    "written": true,
+    "last_result": "pass"
   },
   "review": {
-    "done": false
+    "done": true
   },
   "logging": {
-    "bugs_recorded": false,
-    "fixes_recorded": false
+    "bugs_recorded": true,
+    "fixes_recorded": true
   },
   "git": {
-    "committed": true,
-    "pushed": true
+    "committed": false,
+    "pushed": false
   }
 }

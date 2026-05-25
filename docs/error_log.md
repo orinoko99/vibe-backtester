@@ -31,3 +31,15 @@
 Файлы: src/backtest/portfolio.py
 Решение: Удалены строки с engines, allocations loop; _calculate_portfolio_metrics теперь полагается на __post_init__ PortfolioResult
 Статус: Исправлено, тесты проходят (67/67)
+
+## 2026-05-25 — Исправление
+Проблема: Финальное ревью Этап 2.4 — все найденные проблемы исправлены
+Файлы: множественные (см. список ниже)
+Решение: 
+  - Удалены неиспользуемые импорты (Any, Order, PositionSide, Trade, Callable, Optional, Histogram, Qt, ClassVar) — 9 файлов
+  - Удалена мёртвая переменная vah_mask в volume_profile.py
+  - Удалены мёртвые методы _calculate_allocations, _get_rebalance_indices в portfolio.py
+  - Исправлен баг с inf в returns (models.py, portfolio.py) — np.isnan → np.isfinite
+  - Добавлено логирование в пустые except в main_window.py
+  - Устранено дублирование циклов по БД в loader.py (вынесен общий метод)
+Статус: Исправлено, требуется прогон тестов

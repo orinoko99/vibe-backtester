@@ -1,5 +1,11 @@
 {
-  "task_id": "Этап_2.3_Шаг_1_base",
+  "task_id": "Этап_2.3",
   "tests_written": true,
-  "last_run_result": "pass"
+  "last_run_result": "pass",
+  "total_tests": 330,
+  "files": [
+    "tests/test_indicators.py (94 теста)",
+    "tests/test_indicators_panel.py (18 тестов)",
+    "tests/test_chart_widget.py (54 теста, включая интеграцию индикаторов)"
+  ]
 }

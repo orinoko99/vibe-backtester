@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import timedelta
-from typing import Callable, Literal, Type
+from typing import Literal, Type
 
 import numpy as np
 import polars as pl
@@ -120,7 +120,7 @@ class PortfolioResult:
             self.total_pnl = final_equity - initial_equity
 
         returns = (equity[1:] - equity[:-1]) / equity[:-1]
-        returns = returns[~pl.Series(returns).is_nan().to_numpy()]
+        returns = returns[np.isfinite(returns)]
         if len(returns) > 1 and float(np.std(returns)) > 0:
             self.sharpe_ratio = float(
                 np.mean(returns) / np.std(returns) * (252 * 390) ** 0.5
@@ -357,96 +357,6 @@ class PortfolioBacktestEngine:
         )
 
         return result
-
-    def _calculate_allocations(
-        self,
-        instruments: list[str],
-        weights: dict[str, float],
-        total_capital: float,
-        date_series: pl.Series,
-        rebalance_frequency: RebalanceFrequency,
-    ) -> list[PortfolioAllocation]:
-        """
-        Рассчитывает распределение капитала по инструментам на каждый период.
-
-        Параметры:
-            instruments: Список инструментов.
-            weights: Словарь весов инструментов.
-            total_capital: Общий капитал.
-            date_series: Временная шкала.
-            rebalance_frequency: Частота ребалансировки.
-
-        Возвращает:
-            Список распределений капитала по периодам.
-        """
-        if rebalance_frequency is None or len(date_series) == 0:
-            # Без ребалансировки: одно распределение на весь период
-            allocations_list = {
-                name: total_capital * weights[name]
-                for name in instruments
-            }
-            return [
-                PortfolioAllocation(
-                    date=str(date_series[0]) if len(date_series) > 0 else "",
-                    allocations=allocations_list,
-                )
-            ]
-
-        # Определяем периоды ребалансировки
-        rebalance_indices = self._get_rebalance_indices(
-            date_series=date_series,
-            frequency=rebalance_frequency,
-        )
-
-        allocations_list: list[PortfolioAllocation] = []
-        for idx in rebalance_indices:
-            date_value = str(date_series[idx])
-            alloc = {
-                name: total_capital * weights[name]
-                for name in instruments
-            }
-            allocations_list.append(
-                PortfolioAllocation(date=date_value, allocations=alloc)
-            )
-
-        return allocations_list
-
-    def _get_rebalance_indices(
-        self,
-        date_series: pl.Series,
-        frequency: RebalanceFrequency,
-    ) -> list[int]:
-        """
-        Определяет индексы баров, на которых нужно делать ребалансировку.
-
-        Параметры:
-            date_series: Временная шкала с датами.
-            frequency: Частота ребалансировки.
-
-        Возвращает:
-            Список индексов для ребалансировки.
-        """
-        if frequency is None or len(date_series) == 0:
-            return [0]
-
-        indices: list[int] = [0]
-
-        if frequency == "daily":
-            # Каждый бар — ребалансировка (для тестов)
-            indices = list(range(len(date_series)))
-        elif frequency == "weekly":
-            # Первый бар каждой недели
-            current_week = -1
-            for i in range(len(date_series)):
-                week = i // 5  # упрощённо: 5 баров = неделя
-                if week != current_week:
-                    current_week = week
-                    indices.append(i)
-        else:
-            # monthly, quarterly, yearly — только первый бар
-            indices = [0]
-
-        return indices
 
     def _calculate_portfolio_metrics(
         self,

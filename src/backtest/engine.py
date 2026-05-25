@@ -11,7 +11,7 @@ from typing import Type
 
 import polars as pl
 
-from .models import BacktestResult, Order, PositionSide, Trade
+from .models import BacktestResult
 from .strategy import Strategy
 
 

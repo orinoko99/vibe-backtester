@@ -16,7 +16,7 @@ import pandas as pd
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from lightweight_charts.widgets import QtChart
-from lightweight_charts.abstract import Line, Histogram
+from lightweight_charts.abstract import Line
 
 from src.indicators.base import IndicatorResult, IndicatorType
 
@@ -89,7 +89,7 @@ class ChartWidget(QWidget):
 
         # Активные индикаторы и их подчарты
         self._indicator_lines: dict[str, Line] = {}
-        self._indicator_hists: dict[str, Histogram] = {}
+        self._indicator_hists: dict[str, Any] = {}
         self._indicator_subcharts: dict[str, QtChart] = {}
 
         # Подписываемся на клик по графику для интерактивного рисования

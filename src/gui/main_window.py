@@ -18,9 +18,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+import logging
 from datetime import timedelta
 
 import polars as pl
+
+logger = logging.getLogger(__name__)
 
 from src.data.loader import load_candles
 from src.gui.chart_widget import ChartWidget
@@ -386,8 +389,8 @@ class MainWindow(QMainWindow):
                     f"Подгружено {len(df)} свечей слева для {self._current_sec_code}"
                 )
 
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Не удалось подгрузить данные слева: %s", exc)
 
     def _load_data_after(self, bars_after: float, visible_bars: int) -> None:
         """
@@ -423,8 +426,8 @@ class MainWindow(QMainWindow):
                     f"Подгружено {len(df)} свечей справа для {self._current_sec_code}"
                 )
 
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Не удалось подгрузить данные справа: %s", exc)
 
     def _get_minutes_per_bar(self) -> int:
         """

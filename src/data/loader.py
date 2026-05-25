@@ -188,34 +188,22 @@ def get_available_instruments(
         "shares": [],
     }
 
-    # Собираем инструменты из баз фьючерсов
-    for db_path in futures_paths:
-        try:
-            tables = get_table_list(db_path)
-            for table in tables:
-                # Извлекаем код инструмента из имени таблицы (до _M1, _M5 и т.д.)
-                sec_code = table.split("_")[0] if "_" in table else table
-                result["futures"].append({
-                    "db_path": db_path,
-                    "table": table,
-                    "sec_code": sec_code,
-                })
-        except (FileNotFoundError, sqlite3.DatabaseError):
-            # Пропускаем недоступные БД
-            continue
+    # Вспомогательная функция для сбора инструментов из списка БД
+    def _collect_from_paths(paths: list[str], category_key: str) -> None:
+        for db_path in paths:
+            try:
+                tables = get_table_list(db_path)
+                for table in tables:
+                    sec_code = table.split("_")[0] if "_" in table else table
+                    result[category_key].append({
+                        "db_path": db_path,
+                        "table": table,
+                        "sec_code": sec_code,
+                    })
+            except (FileNotFoundError, sqlite3.DatabaseError):
+                continue
 
-    # Собираем инструменты из баз акций
-    for db_path in shares_paths:
-        try:
-            tables = get_table_list(db_path)
-            for table in tables:
-                sec_code = table.split("_")[0] if "_" in table else table
-                result["shares"].append({
-                    "db_path": db_path,
-                    "table": table,
-                    "sec_code": sec_code,
-                })
-        except (FileNotFoundError, sqlite3.DatabaseError):
-            continue
+    _collect_from_paths(futures_paths, "futures")
+    _collect_from_paths(shares_paths, "shares")
 
     return result
