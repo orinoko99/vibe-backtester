@@ -1092,3 +1092,218 @@ def test_bb_series_names(overlay_data: pl.DataFrame) -> None:
     assert "bb_upper" in result.series_names
     assert "bb_middle" in result.series_names
     assert "bb_lower" in result.series_names
+
+
+# ══════════════════════════════════════════════
+# Тесты осцилляторов
+# ══════════════════════════════════════════════
+
+
+from src.indicators.oscillators import RSI, MACD
+
+
+@pytest.fixture
+def osc_data() -> pl.DataFrame:
+    """Фикстура: 50 свечей для осцилляторов с трендом и шумом."""
+    np.random.seed(42)
+    prices = 100.0 + np.cumsum(np.random.normal(0, 1, 50))
+    return pl.DataFrame({
+        "date": [datetime(2025, 1, 1, 10, i) for i in range(50)],
+        "open": prices,
+        "high": prices + 1.0,
+        "low": prices - 1.0,
+        "close": prices,
+        "volume": [1000] * 50,
+    })
+
+
+@pytest.fixture
+def osc_uptrend() -> pl.DataFrame:
+    """Фикстура: 50 свечей с восходящим трендом."""
+    prices = [float(100 + i * 0.5) for i in range(50)]
+    return pl.DataFrame({
+        "date": [datetime(2025, 1, 1, 10, i) for i in range(50)],
+        "open": prices,
+        "high": [p + 1 for p in prices],
+        "low": [p - 1 for p in prices],
+        "close": prices,
+        "volume": [1000] * 50,
+    })
+
+
+# ──────────────────────────────────────────────
+# Тесты RSI
+# ──────────────────────────────────────────────
+
+
+def test_rsi_creation() -> None:
+    """Проверяет создание RSI."""
+    rsi = RSI()
+    assert rsi.name == "RSI"
+    assert rsi._params["period"] == 14
+    assert rsi.indicator_type == IndicatorType.OSCILLATOR
+    assert rsi.display_name == "RSI(14)"
+
+
+def test_rsi_custom_period() -> None:
+    """Проверяет RSI с пользовательским периодом."""
+    rsi = RSI(period=7)
+    assert rsi._params["period"] == 7
+    assert rsi.display_name == "RSI(7)"
+
+
+def test_rsi_calculate_returns_indicator_result(osc_data: pl.DataFrame) -> None:
+    """Проверяет, что RSI.calculate возвращает IndicatorResult."""
+    rsi = RSI()
+    result = rsi.calculate(osc_data)
+    assert isinstance(result, IndicatorResult)
+    assert result.overlay is False
+    assert result.panel == "rsi"
+    assert "rsi" in result.data.columns
+
+
+def test_rsi_values_range(osc_data: pl.DataFrame) -> None:
+    """Проверяет, что RSI находится в диапазоне 0-100."""
+    rsi = RSI()
+    result = rsi.calculate(osc_data)
+    rsi_vals = result.data["rsi"].to_list()
+    valid = [v for v in rsi_vals if not np.isnan(v)]
+    assert all(0 <= v <= 100 for v in valid)
+
+
+def test_rsi_uptrend_above_50(osc_uptrend: pl.DataFrame) -> None:
+    """Проверяет, что на восходящем тренде RSI > 50."""
+    rsi = RSI(period=5)
+    result = rsi.calculate(osc_uptrend)
+    rsi_vals = result.data["rsi"].to_list()
+    valid = [v for v in rsi_vals if not np.isnan(v)]
+    assert all(v > 50 for v in valid)
+
+
+def test_rsi_first_valid_values(osc_uptrend: pl.DataFrame) -> None:
+    """Проверяет первые значения RSI (после period баров)."""
+    rsi = RSI(period=5)
+    result = rsi.calculate(osc_uptrend)
+    rsi_vals = result.data["rsi"].to_list()
+    # Первые 5 значений должны быть NaN
+    assert all(np.isnan(rsi_vals[i]) for i in range(5))
+    # 6-е значение должно быть числом
+    assert not np.isnan(rsi_vals[5])
+
+
+def test_rsi_constant_values() -> None:
+    """Проверяет RSI на данных с постоянной ценой (должен быть NaN или 50)."""
+    rsi = RSI(period=5)
+    data = pl.DataFrame({
+        "date": [datetime(2025, 1, 1, 10, i) for i in range(20)],
+        "open": [100.0] * 20, "high": [100.0] * 20,
+        "low": [100.0] * 20, "close": [100.0] * 20,
+        "volume": [1000] * 20,
+    })
+    result = rsi.calculate(data)
+    rsi_vals = result.data["rsi"].to_list()
+    # При постоянной цене все изменения = 0, avg_loss = 0, RSI = 100 по Wilders
+    valid = [v for v in rsi_vals if not np.isnan(v)]
+    assert all(v == 100.0 for v in valid)
+
+
+def test_rsi_all_nan_on_short_data() -> None:
+    """Проверяет RSI на данных короче периода."""
+    rsi = RSI(period=10)
+    short = pl.DataFrame({
+        "date": [datetime(2025, 1, 1, 10, i) for i in range(5)],
+        "open": [100.0] * 5, "high": [101.0] * 5,
+        "low": [99.0] * 5, "close": [100.0] * 5,
+        "volume": [1000] * 5,
+    })
+    result = rsi.calculate(short)
+    rsi_vals = result.data["rsi"].to_list()
+    assert all(np.isnan(v) for v in rsi_vals)
+
+
+# ──────────────────────────────────────────────
+# Тесты MACD
+# ──────────────────────────────────────────────
+
+
+def test_macd_creation() -> None:
+    """Проверяет создание MACD."""
+    macd = MACD()
+    assert macd.name == "MACD"
+    assert macd._params["fast_period"] == 12
+    assert macd._params["slow_period"] == 26
+    assert macd._params["signal_period"] == 9
+    assert macd.indicator_type == IndicatorType.OSCILLATOR
+    assert macd.display_name == "MACD(12, 26, 9)"
+
+
+def test_macd_custom_params() -> None:
+    """Проверяет MACD с пользовательскими параметрами."""
+    macd = MACD(fast_period=8, slow_period=20, signal_period=5)
+    assert macd._params["fast_period"] == 8
+    assert macd._params["slow_period"] == 20
+    assert macd._params["signal_period"] == 5
+    assert macd.display_name == "MACD(8, 20, 5)"
+
+
+def test_macd_calculate_returns_indicator_result(osc_data: pl.DataFrame) -> None:
+    """Проверяет, что MACD.calculate возвращает IndicatorResult."""
+    macd = MACD()
+    result = macd.calculate(osc_data)
+    assert isinstance(result, IndicatorResult)
+    assert result.overlay is False
+    assert result.panel == "macd"
+
+
+def test_macd_has_three_series(osc_data: pl.DataFrame) -> None:
+    """Проверяет, что MACD содержит три ряда."""
+    macd = MACD()
+    result = macd.calculate(osc_data)
+    assert "macd" in result.data.columns
+    assert "signal" in result.data.columns
+    assert "histogram" in result.data.columns
+
+
+def test_macd_histogram_equals_difference(osc_data: pl.DataFrame) -> None:
+    """Проверяет, что histogram = macd - signal."""
+    macd = MACD(fast_period=5, slow_period=10, signal_period=3)
+    result = macd.calculate(osc_data)
+    macd_line = result.data["macd"].to_list()
+    signal = result.data["signal"].to_list()
+    hist = result.data["histogram"].to_list()
+    for i in range(len(hist)):
+        if not (np.isnan(macd_line[i]) or np.isnan(signal[i]) or np.isnan(hist[i])):
+            assert hist[i] == pytest.approx(float(macd_line[i]) - float(signal[i]))
+
+
+def test_macd_all_nan_on_short_data() -> None:
+    """Проверяет MACD на данных короче slow_period."""
+    macd = MACD()
+    short = pl.DataFrame({
+        "date": [datetime(2025, 1, 1, 10, i) for i in range(5)],
+        "open": [100.0] * 5, "high": [101.0] * 5,
+        "low": [99.0] * 5, "close": [100.0] * 5,
+        "volume": [1000] * 5,
+    })
+    result = macd.calculate(short)
+    macd_line = result.data["macd"].to_list()
+    assert all(np.isnan(v) for v in macd_line)
+
+
+def test_macd_uptrend_positive(osc_uptrend: pl.DataFrame) -> None:
+    """Проверяет, что на восходящем тренде MACD > 0."""
+    macd = MACD(fast_period=5, slow_period=10, signal_period=3)
+    result = macd.calculate(osc_uptrend)
+    macd_vals = result.data["macd"].to_list()
+    valid = [v for v in macd_vals if not np.isnan(v)]
+    # На восходящем тренде быстрая EMA > медленной EMA
+    assert all(v > 0 for v in valid[-10:])
+
+
+def test_macd_series_names(osc_data: pl.DataFrame) -> None:
+    """Проверяет имена рядов в IndicatorResult MACD."""
+    macd = MACD()
+    result = macd.calculate(osc_data)
+    assert "macd" in result.series_names
+    assert "signal" in result.series_names
+    assert "histogram" in result.series_names

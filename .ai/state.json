@@ -10,23 +10,23 @@
     "Тесты для всех индикаторов + GUI панели",
     "Обновление файлов: completed_tasks, tests.json, error_log"
   ],
-  "step_index": 3,
-  "mode": "GIT",
-  "status": "committing",
+  "step_index": 4,
+  "mode": "CODER",
+  "status": "coding",
   "attempts": 0,
   "tests": {
-    "written": true,
-    "last_result": "pass"
+    "written": false,
+    "last_result": null
   },
   "review": {
-    "done": true
+    "done": false
   },
   "logging": {
     "bugs_recorded": false,
     "fixes_recorded": false
   },
   "git": {
-    "committed": false,
-    "pushed": false
+    "committed": true,
+    "pushed": true
   }
 }
