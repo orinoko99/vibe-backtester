@@ -1,15 +1,9 @@
 {
-  "current_task": "Этап 2.4 — Финальное ревью, оптимизация, README, финальный коммит",
-  "plan": [
-    "Финальное ревью кода",
-    "Оптимизация и исправление найденных проблем",
-    "Создание README.md",
-    "Прогон всех тестов",
-    "Финальный коммит + git push"
-  ],
-  "step_index": 5,
-  "mode": "GIT",
-  "status": "committing",
+  "current_task": null,
+  "plan": [],
+  "step_index": 0,
+  "mode": "PLANNER",
+  "status": "idle",
   "attempts": 0,
   "tests": {
     "written": true,
@@ -23,7 +17,7 @@
     "fixes_recorded": true
   },
   "git": {
-    "committed": false,
-    "pushed": false
+    "committed": true,
+    "pushed": true
   }
 }

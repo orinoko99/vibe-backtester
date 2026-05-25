@@ -10,7 +10,7 @@ import sys
 
 from PySide6.QtWidgets import QApplication
 
-from src.data.loader import DEFAULT_FUTURES_DB_PATHS, load_candles
+from src.data.loader import DEFAULT_FUTURES_DB_PATHS, get_table_list, load_candles
 from src.gui.main_window import MainWindow
 
 
@@ -48,9 +48,6 @@ def _try_load_demo_data(window: MainWindow) -> None:
     """
     for db_path in DEFAULT_FUTURES_DB_PATHS:
         try:
-            # Получаем список инструментов из первой доступной БД
-            from src.data.loader import get_table_list
-
             tables = get_table_list(db_path)
             if not tables:
                 continue
