@@ -8,8 +8,11 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any, Callable, Literal
+
+logger = logging.getLogger(__name__)
 
 import polars as pl
 import pandas as pd
@@ -484,9 +487,50 @@ class ChartWidget(QWidget):
 
     def clear_drawings(self) -> None:
         """Удаляет все рисунки и маркеры с графика."""
-        self.chart.clear_markers()
+        # Удаляем все объекты рисования через их delete()
+        for drawing in self._drawings:
+            drawing_type = drawing.get("type")
+            obj = drawing.get("object")
+            marker_id = drawing.get("id")
+
+            if drawing_type == "marker" and marker_id:
+                self.chart.remove_marker(marker_id)
+            elif obj is not None and hasattr(obj, "delete"):
+                try:
+                    obj.delete()
+                except Exception:
+                    pass
+
         self._drawings.clear()
         self._pending_point = None
+
+    def delete_drawing(self, index: int) -> bool:
+        """
+        Удаляет один рисунок по индексу.
+
+        Параметры:
+            index: Индекс рисунка в списке _drawings.
+
+        Возвращает:
+            True, если рисунок удалён.
+        """
+        if index < 0 or index >= len(self._drawings):
+            return False
+
+        drawing = self._drawings.pop(index)
+        drawing_type = drawing.get("type")
+        obj = drawing.get("object")
+        marker_id = drawing.get("id")
+
+        if drawing_type == "marker" and marker_id:
+            self.chart.remove_marker(marker_id)
+        elif obj is not None and hasattr(obj, "delete"):
+            try:
+                obj.delete()
+            except Exception:
+                pass
+
+        return True
 
     def get_drawings(self) -> list[dict[str, Any]]:
         """
@@ -496,6 +540,67 @@ class ChartWidget(QWidget):
             Список словарей с информацией о каждом рисунке.
         """
         return self._drawings.copy()
+
+    def serialize_drawings(self) -> list[dict[str, Any]]:
+        """
+        Сериализует рисунки для сохранения (без lwc-объектов).
+
+        Возвращает:
+            Список словарей с данными рисунков (без поля 'object').
+        """
+        serialized = []
+        for d in self._drawings:
+            entry = {k: v for k, v in d.items() if k != "object"}
+            # Дату/время превращаем в строку для сериализации
+            for key in ("time", "start_time", "end_time"):
+                if key in entry and not isinstance(entry[key], str):
+                    entry[key] = str(entry[key])
+            serialized.append(entry)
+        return serialized
+
+    def restore_drawings(self, drawings_data: list[dict[str, Any]]) -> None:
+        """
+        Восстанавливает рисунки из сериализованных данных.
+
+        Параметры:
+            drawings_data: Список словарей с данными рисунков.
+        """
+        # Сначала очищаем текущие рисунки
+        self.clear_drawings()
+
+        for d in drawings_data:
+            drawing_type = d.get("type")
+            color = d.get("color", self.drawing_color)
+
+            try:
+                if drawing_type == "horizontal_line":
+                    self.add_horizontal_line(price=float(d["price"]), color=color)
+                elif drawing_type == "vertical_line":
+                    self.add_vertical_line(time=d["time"], color=color)
+                elif drawing_type == "trend_line":
+                    self.add_trend_line(
+                        start_time=d["start_time"], start_value=float(d["start_value"]),
+                        end_time=d["end_time"], end_value=float(d["end_value"]),
+                        color=color,
+                    )
+                elif drawing_type == "ray_line":
+                    self.add_ray_line(
+                        start_time=d["start_time"], value=float(d["value"]), color=color,
+                    )
+                elif drawing_type == "vertical_span":
+                    self.add_vertical_span(
+                        start_time=d["start_time"], end_time=d["end_time"], color=color,
+                    )
+                elif drawing_type == "marker":
+                    self.add_marker(
+                        time=d["time"],
+                        text=d.get("text", ""),
+                        position=d.get("position", "below"),
+                        shape=d.get("shape", "arrow_up"),
+                        color=color,
+                    )
+            except (KeyError, ValueError, TypeError) as exc:
+                logger.warning("Не удалось восстановить рисунок %s: %s", drawing_type, exc)
 
     # ──────────────────────────────────────────────
     # Обработка кликов для интерактивного рисования

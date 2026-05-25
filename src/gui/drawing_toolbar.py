@@ -36,6 +36,7 @@ class DrawingToolbar(QWidget):
     tool_selected = Signal(str)
     color_selected = Signal(str)
     clear_requested = Signal()
+    delete_last_requested = Signal()
 
     def __init__(self, parent: QWidget = None) -> None:
         """
@@ -112,6 +113,12 @@ class DrawingToolbar(QWidget):
         separator.setFrameShape(QFrame.Shape.HLine)
         separator.setFrameShadow(QFrame.Shadow.Sunken)
         tools_layout.addWidget(separator)
+
+        # Кнопка удаления последнего рисунка
+        self.delete_last_button = QPushButton("Удалить последний")
+        self.delete_last_button.setToolTip("Удалить последний добавленный рисунок")
+        self.delete_last_button.clicked.connect(self.delete_last_requested.emit)
+        tools_layout.addWidget(self.delete_last_button)
 
         # Кнопка очистки всех рисунков
         self.clear_button = QPushButton("Очистить всё")

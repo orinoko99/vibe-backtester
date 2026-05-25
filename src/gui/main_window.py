@@ -73,6 +73,9 @@ class MainWindow(QMainWindow):
         # Сохранённые позиции камеры по инструментам: ключ (db_path, sec_code, timeframe) -> (start_date, end_date)
         self._camera_positions: dict[tuple[str, str, str], tuple[str, str]] = {}
 
+        # Сохранённые рисунки по инструментам: ключ (db_path, sec_code, timeframe) -> list[dict]
+        self._saved_drawings: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+
         # Создаём центральный виджет-контейнер для графика
         self._create_central_widget()
 
@@ -193,6 +196,7 @@ class MainWindow(QMainWindow):
         self.drawing_toolbar.tool_selected.connect(self._on_drawing_tool_selected)
         self.drawing_toolbar.color_selected.connect(self._on_drawing_color_selected)
         self.drawing_toolbar.clear_requested.connect(self._on_drawing_clear)
+        self.drawing_toolbar.delete_last_requested.connect(self._on_drawing_delete_last)
         self.drawing_dock.setWidget(self.drawing_toolbar)
 
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.drawing_dock)
@@ -230,6 +234,15 @@ class MainWindow(QMainWindow):
         self.chart_widget.clear_drawings()
         self.set_status_message("Все рисунки очищены")
 
+    def _on_drawing_delete_last(self) -> None:
+        """Удаляет последний добавленный рисунок."""
+        drawings = self.chart_widget.get_drawings()
+        if not drawings:
+            self.set_status_message("Нет рисунков для удаления")
+            return
+        if self.chart_widget.delete_drawing(len(drawings) - 1):
+            self.set_status_message("Последний рисунок удалён")
+
     def _on_instrument_selected(self, db_path: str, sec_code: str) -> None:
         """
         Обрабатывает выбор инструмента в панели.
@@ -241,8 +254,9 @@ class MainWindow(QMainWindow):
             db_path: Путь к БД инструмента.
             sec_code: Код инструмента.
         """
-        # Сохраняем позицию камеры для текущего инструмента
+        # Сохраняем позицию камеры и рисунки для текущего инструмента
         self._save_camera_position()
+        self._save_drawings()
 
         self._current_db_path = db_path
         self._current_sec_code = sec_code
@@ -255,6 +269,19 @@ class MainWindow(QMainWindow):
         if self._current_db_path and self._current_sec_code and self._loaded_start and self._loaded_end:
             key = (self._current_db_path, self._current_sec_code, self._current_timeframe)
             self._camera_positions[key] = (self._loaded_start, self._loaded_end)
+
+    def _save_drawings(self) -> None:
+        """Сохраняет рисунки текущего инструмента."""
+        if self._current_db_path and self._current_sec_code and hasattr(self, 'chart_widget'):
+            key = (self._current_db_path, self._current_sec_code, self._current_timeframe)
+            self._saved_drawings[key] = self.chart_widget.serialize_drawings()
+
+    def _restore_drawings(self, db_path: str, sec_code: str) -> None:
+        """Восстанавливает рисунки для инструмента, если они были сохранены."""
+        key = (db_path, sec_code, self._current_timeframe)
+        drawings = self._saved_drawings.get(key, [])
+        if drawings:
+            self.chart_widget.restore_drawings(drawings)
 
     def _restore_camera_position(self, db_path: str, sec_code: str) -> bool:
         """
@@ -284,6 +311,9 @@ class MainWindow(QMainWindow):
         Параметры:
             timeframe: Новый таймфрейм (например 'M5', 'H1').
         """
+        # Сохраняем рисунки для старого таймфрейма
+        self._save_drawings()
+
         self._current_timeframe = timeframe
         self.set_status_message(f"Таймфрейм изменён: {timeframe}")
 
@@ -545,6 +575,9 @@ class MainWindow(QMainWindow):
             if len(dates) > 0:
                 self._loaded_start = str(dates[0])
                 self._loaded_end = str(dates[-1])
+
+            # Восстанавливаем рисунки для этого инструмента
+            self._restore_drawings(db_path, sec_code)
 
             # Подгоняем масштаб с микро-задержкой, чтобы WebEngine успел отрисовать данные
             QTimer.singleShot(50, self.chart_widget.fit)
