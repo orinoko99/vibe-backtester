@@ -24,6 +24,7 @@ import polars as pl
 
 from src.data.loader import load_candles
 from src.gui.chart_widget import ChartWidget
+from src.gui.drawing_toolbar import DrawingToolbar
 from src.gui.instrument_panel import InstrumentPanel
 
 
@@ -77,6 +78,9 @@ class MainWindow(QMainWindow):
 
         # Создаём док-панель выбора инструмента
         self._create_instrument_dock()
+
+        # Создаём док-панель инструментов рисования
+        self._create_drawing_dock()
 
         # Создаём строку статуса
         self._create_status_bar()
@@ -169,6 +173,56 @@ class MainWindow(QMainWindow):
         self.instrument_dock.setWidget(self.instrument_panel)
 
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.instrument_dock)
+
+    def _create_drawing_dock(self) -> None:
+        """Создаёт док-панель инструментов рисования."""
+        self.drawing_dock = QDockWidget("Рисование", self)
+        self.drawing_dock.setObjectName("drawingDock")
+        self.drawing_dock.setAllowedAreas(
+            Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea
+        )
+
+        # Панель инструментов рисования
+        self.drawing_toolbar = DrawingToolbar()
+        self.drawing_toolbar.tool_selected.connect(self._on_drawing_tool_selected)
+        self.drawing_toolbar.color_selected.connect(self._on_drawing_color_selected)
+        self.drawing_toolbar.clear_requested.connect(self._on_drawing_clear)
+        self.drawing_dock.setWidget(self.drawing_toolbar)
+
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.drawing_dock)
+
+    def _on_drawing_tool_selected(self, tool_name: str) -> None:
+        """
+        Обрабатывает выбор инструмента рисования.
+
+        Параметры:
+            tool_name: Имя инструмента ('horizontal_line', 'vertical_line' и т.д.).
+        """
+        self.chart_widget.set_drawing_tool(tool_name)
+        status_text = {
+            "none": "Рисование отключено",
+            "horizontal_line": "Горизонтальная линия — кликните на график",
+            "vertical_line": "Вертикальная линия — кликните на график",
+            "trend_line": "Трендовая линия — кликните первую точку, затем вторую",
+            "ray_line": "Луч — кликните начальную точку",
+            "vertical_span": "Вертикальная заливка — кликните начало, затем конец",
+            "marker": "Маркер — кликните на свечу",
+        }
+        self.set_status_message(status_text.get(tool_name, f"Инструмент: {tool_name}"))
+
+    def _on_drawing_color_selected(self, color: str) -> None:
+        """
+        Обрабатывает выбор цвета для рисования.
+
+        Параметры:
+            color: HEX-код цвета.
+        """
+        self.chart_widget.set_drawing_color(color)
+
+    def _on_drawing_clear(self) -> None:
+        """Очищает все рисунки и маркеры с графика."""
+        self.chart_widget.clear_drawings()
+        self.set_status_message("Все рисунки очищены")
 
     def _on_instrument_selected(self, db_path: str, sec_code: str) -> None:
         """

@@ -1,7 +1,8 @@
 """
 Тесты для виджета графика (src/gui/chart_widget.py).
 
-Проверяет создание ChartWidget, загрузку данных и базовые операции.
+Проверяет создание ChartWidget, загрузку данных, базовые операции,
+а также инструменты рисования и маркеры.
 """
 
 from datetime import datetime
@@ -201,3 +202,360 @@ def test_chart_widget_webview_in_layout(chart_widget: ChartWidget) -> None:
         for i in range(chart_widget.chart_layout.count())
     ]
     assert chart_widget.webview in layout_items
+
+
+# ──────────────────────────────────────────────
+# Тесты для инструментов рисования
+# ──────────────────────────────────────────────
+
+
+def test_drawing_default_state(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет начальное состояние инструментов рисования.
+    """
+    assert chart_widget.active_tool == "none"
+    assert chart_widget.drawing_color == "#1E80F0"
+    assert chart_widget._drawings == []
+    assert chart_widget._pending_point is None
+
+
+def test_set_drawing_tool(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет переключение инструментов рисования.
+    """
+    chart_widget.set_drawing_tool("horizontal_line")
+    assert chart_widget.active_tool == "horizontal_line"
+    assert chart_widget._pending_point is None
+
+    chart_widget.set_drawing_tool("trend_line")
+    assert chart_widget.active_tool == "trend_line"
+
+    chart_widget.set_drawing_tool("none")
+    assert chart_widget.active_tool == "none"
+
+
+def test_set_drawing_color(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет смену цвета рисования.
+    """
+    chart_widget.set_drawing_color("#FF0000")
+    assert chart_widget.drawing_color == "#FF0000"
+
+    chart_widget.set_drawing_color("#00FF00")
+    assert chart_widget.drawing_color == "#00FF00"
+
+
+def test_add_horizontal_line(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет добавление горизонтальной линии.
+    """
+    line = chart_widget.add_horizontal_line(price=100.0, color="#FF0000", text="Тест")
+    assert line is not None
+    assert len(chart_widget._drawings) == 1
+    assert chart_widget._drawings[0]["type"] == "horizontal_line"
+    assert chart_widget._drawings[0]["price"] == 100.0
+    assert chart_widget._drawings[0]["color"] == "#FF0000"
+
+
+def test_add_horizontal_line_uses_default_color(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет, что горизонтальная линия использует цвет по умолчанию.
+    """
+    chart_widget.set_drawing_color("#00FF00")
+    line = chart_widget.add_horizontal_line(price=150.0)
+    assert line is not None
+    assert chart_widget._drawings[0]["color"] == "#00FF00"
+
+
+def test_add_vertical_line(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет добавление вертикальной линии.
+    """
+    line = chart_widget.add_vertical_line(
+        time=datetime(2025, 10, 28, 9, 0), color="#00FF00", text="Старт"
+    )
+    assert line is not None
+    assert len(chart_widget._drawings) == 1
+    assert chart_widget._drawings[0]["type"] == "vertical_line"
+    assert chart_widget._drawings[0]["time"] is not None
+
+
+def test_add_vertical_line_with_string_time(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет добавление вертикальной линии со строковым временем.
+    """
+    line = chart_widget.add_vertical_line(time="2025-10-28T09:00:00")
+    assert line is not None
+    assert chart_widget._drawings[0]["type"] == "vertical_line"
+
+
+def test_add_trend_line(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет добавление трендовой линии между двумя точками.
+    """
+    line = chart_widget.add_trend_line(
+        start_time=datetime(2025, 10, 28, 9, 0),
+        start_value=100.0,
+        end_time=datetime(2025, 10, 28, 9, 4),
+        end_value=106.0,
+        color="#FF0000",
+    )
+    assert line is not None
+    assert len(chart_widget._drawings) == 1
+    assert chart_widget._drawings[0]["type"] == "trend_line"
+    assert chart_widget._drawings[0]["start_value"] == 100.0
+    assert chart_widget._drawings[0]["end_value"] == 106.0
+
+
+def test_add_ray_line(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет добавление луча.
+    """
+    ray = chart_widget.add_ray_line(
+        start_time=datetime(2025, 10, 28, 9, 0),
+        value=100.0,
+        color="#FF0000",
+    )
+    assert ray is not None
+    assert len(chart_widget._drawings) == 1
+    assert chart_widget._drawings[0]["type"] == "ray_line"
+    assert chart_widget._drawings[0]["value"] == 100.0
+
+
+def test_add_vertical_span(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет добавление вертикальной заливки.
+    """
+    span = chart_widget.add_vertical_span(
+        start_time=datetime(2025, 10, 28, 9, 0),
+        end_time=datetime(2025, 10, 28, 9, 4),
+    )
+    assert span is not None
+    assert len(chart_widget._drawings) == 1
+    assert chart_widget._drawings[0]["type"] == "vertical_span"
+
+
+def test_add_marker(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет добавление маркера на свечу.
+    """
+    marker_id = chart_widget.add_marker(
+        time=datetime(2025, 10, 28, 9, 0),
+        text="Вход",
+        position="above",
+        shape="arrow_up",
+        color="#FF0000",
+    )
+    assert marker_id is not None
+    assert isinstance(marker_id, str)
+    assert len(chart_widget._drawings) == 1
+    assert chart_widget._drawings[0]["type"] == "marker"
+    assert chart_widget._drawings[0]["text"] == "Вход"
+
+
+def test_remove_marker(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет удаление маркера по ID.
+    """
+    marker_id = chart_widget.add_marker(
+        time=datetime(2025, 10, 28, 9, 0),
+        text="Тест",
+    )
+    assert len(chart_widget._drawings) == 1
+
+    chart_widget.remove_marker(marker_id)
+    assert len(chart_widget._drawings) == 0
+
+
+def test_clear_drawings(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет очистку всех рисунков и маркеров.
+    """
+    chart_widget.add_horizontal_line(price=100.0)
+    chart_widget.add_marker(time=datetime(2025, 10, 28, 9, 0), text="Маркер")
+    assert len(chart_widget._drawings) == 2
+
+    chart_widget.clear_drawings()
+    assert chart_widget._drawings == []
+    assert chart_widget._pending_point is None
+
+
+def test_get_drawings_returns_copy(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет, что get_drawings возвращает копию списка рисунков.
+    """
+    chart_widget.add_horizontal_line(price=100.0)
+    drawings = chart_widget.get_drawings()
+    assert len(drawings) == 1
+    # Изменение возвращённого списка не должно влиять на внутренний
+    drawings.clear()
+    assert len(chart_widget._drawings) == 1
+
+
+def test_get_drawings_empty_by_default(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет, что get_drawings возвращает пустой список.
+    """
+    assert chart_widget.get_drawings() == []
+
+
+def test_multiple_drawings_tracked(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет отслеживание нескольких рисунков одновременно.
+    """
+    chart_widget.add_horizontal_line(price=100.0)
+    chart_widget.add_horizontal_line(price=200.0)
+    chart_widget.add_vertical_line(time=datetime(2025, 10, 28, 9, 0))
+    assert len(chart_widget.get_drawings()) == 3
+
+
+def test_drawing_color_only_applies_to_new(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет, что смена цвета не влияет на уже созданные рисунки.
+    """
+    line1 = chart_widget.add_horizontal_line(price=100.0, color="#FF0000")
+    chart_widget.set_drawing_color("#00FF00")
+    line2 = chart_widget.add_horizontal_line(price=200.0)
+    assert chart_widget._drawings[0]["color"] == "#FF0000"
+    assert chart_widget._drawings[1]["color"] == "#00FF00"
+
+
+def test_clear_drawings_after_data_clear(chart_widget: ChartWidget, sample_candles: pl.DataFrame) -> None:
+    """
+    Проверяет, что clear_drawings работает после загрузки данных.
+    """
+    chart_widget.load_candles(sample_candles)
+    chart_widget.add_horizontal_line(price=100.0)
+    chart_widget.clear_drawings()
+    assert chart_widget._drawings == []
+
+
+def test_handle_chart_click_horizontal_line(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет обработку клика для горизонтальной линии.
+    """
+    chart_widget.set_drawing_tool("horizontal_line")
+    chart_widget._handle_chart_click(
+        time=datetime(2025, 10, 28, 9, 0), price=100.0
+    )
+    assert len(chart_widget._drawings) == 1
+    assert chart_widget._drawings[0]["type"] == "horizontal_line"
+    assert chart_widget._drawings[0]["price"] == 100.0
+
+
+def test_handle_chart_click_vertical_line(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет обработку клика для вертикальной линии.
+    """
+    chart_widget.set_drawing_tool("vertical_line")
+    dt = datetime(2025, 10, 28, 9, 0)
+    chart_widget._handle_chart_click(time=dt, price=100.0)
+    assert len(chart_widget._drawings) == 1
+    assert chart_widget._drawings[0]["type"] == "vertical_line"
+
+
+def test_handle_chart_click_marker(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет обработку клика для маркера.
+    """
+    chart_widget.set_drawing_tool("marker")
+    chart_widget._handle_chart_click(
+        time=datetime(2025, 10, 28, 9, 0), price=100.0
+    )
+    assert len(chart_widget._drawings) == 1
+    assert chart_widget._drawings[0]["type"] == "marker"
+
+
+def test_handle_chart_click_ray_line(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет обработку клика для луча.
+    """
+    chart_widget.set_drawing_tool("ray_line")
+    chart_widget._handle_chart_click(
+        time=datetime(2025, 10, 28, 9, 0), price=100.0
+    )
+    assert len(chart_widget._drawings) == 1
+    assert chart_widget._drawings[0]["type"] == "ray_line"
+    assert chart_widget._drawings[0]["value"] == 100.0
+
+
+def test_handle_chart_click_trend_line_two_clicks(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет обработку двух кликов для трендовой линии.
+    Первый клик запоминает точку, второй создаёт линию.
+    """
+    chart_widget.set_drawing_tool("trend_line")
+
+    # Первый клик — запоминает точку, ничего не рисует
+    chart_widget._handle_chart_click(
+        time=datetime(2025, 10, 28, 9, 0), price=100.0
+    )
+    assert chart_widget._pending_point is not None
+    assert len(chart_widget._drawings) == 0
+
+    # Второй клик — создаёт трендовую линию
+    chart_widget._handle_chart_click(
+        time=datetime(2025, 10, 28, 9, 4), price=106.0
+    )
+    assert chart_widget._pending_point is None
+    assert len(chart_widget._drawings) == 1
+    assert chart_widget._drawings[0]["type"] == "trend_line"
+    assert chart_widget._drawings[0]["start_value"] == 100.0
+    assert chart_widget._drawings[0]["end_value"] == 106.0
+
+
+def test_handle_chart_click_vertical_span_two_clicks(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет обработку двух кликов для вертикальной заливки.
+    """
+    chart_widget.set_drawing_tool("vertical_span")
+
+    # Первый клик
+    chart_widget._handle_chart_click(
+        time=datetime(2025, 10, 28, 9, 0), price=100.0
+    )
+    assert chart_widget._pending_point is not None
+    assert len(chart_widget._drawings) == 0
+
+    # Второй клик — создаёт заливку
+    chart_widget._handle_chart_click(
+        time=datetime(2025, 10, 28, 9, 4), price=106.0
+    )
+    assert chart_widget._pending_point is None
+    assert len(chart_widget._drawings) == 1
+    assert chart_widget._drawings[0]["type"] == "vertical_span"
+
+
+def test_handle_chart_click_with_none_time(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет, что клик с None time/price игнорируется.
+    """
+    chart_widget.set_drawing_tool("horizontal_line")
+    chart_widget._handle_chart_click(time=None, price=None)
+    assert len(chart_widget._drawings) == 0
+
+
+def test_handle_chart_click_with_none_tool(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет, что клик с выключенным инструментом игнорируется.
+    """
+    chart_widget.set_drawing_tool("none")
+    chart_widget._handle_chart_click(
+        time=datetime(2025, 10, 28, 9, 0), price=100.0
+    )
+    assert len(chart_widget._drawings) == 0
+
+
+def test_set_drawing_tool_resets_pending(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет, что смена инструмента сбрасывает ожидающую точку.
+    """
+    chart_widget.set_drawing_tool("trend_line")
+    chart_widget._handle_chart_click(
+        time=datetime(2025, 10, 28, 9, 0), price=100.0
+    )
+    assert chart_widget._pending_point is not None
+
+    # Смена инструмента сбрасывает ожидание
+    chart_widget.set_drawing_tool("horizontal_line")
+    assert chart_widget._pending_point is None

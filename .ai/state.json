@@ -1,10 +1,12 @@
 {
-  "current_task": "Этап 1.6 — Интерактивность: выбор инструмента, таймфрейма, подгрузка данных + тесты",
+  "current_task": "Этап 1.7 — Инструменты рисования и текстовые метки на графике + тесты",
   "plan": [
-    "Создать InstrumentPanel + тесты (13 тестов)",
-    "Обновить MainWindow: toolbar с таймфреймом, док-панель",
-    "Добавить динамическую подгрузку данных (range_change, PADDING_SCREENS=2)",
-    "Запустить все 88 тестов — успешно"
+    "Изучить API lightweight-charts на предмет рисования",
+    "Расширить ChartWidget методами рисования и маркеров",
+    "Создать DrawingToolbar (панель инструментов рисования)",
+    "Интегрировать панель в MainWindow",
+    "Написать тесты",
+    "Запустить тесты и зафиксировать результат"
   ],
   "step_index": 6,
   "mode": "GIT",
@@ -18,8 +20,8 @@
     "done": true
   },
   "logging": {
-    "bugs_recorded": false,
-    "fixes_recorded": false
+    "bugs_recorded": true,
+    "fixes_recorded": true
   },
   "git": {
     "committed": false,

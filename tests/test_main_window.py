@@ -356,3 +356,96 @@ def test_current_state_after_instrument_selection(window: MainWindow) -> None:
     # После изменения внутреннего состояния комбобокс не синхронизируется автоматически
     # Это нормально — таймфрейм меняется через комбобокс
     assert window._current_timeframe == "D1"
+
+
+# ──────────────────────────────────────────────
+# Тесты для панели рисования
+# ──────────────────────────────────────────────
+
+
+def test_drawing_dock_exists(window: MainWindow) -> None:
+    """
+    Проверяет наличие док-панели рисования.
+    """
+    dock = window.findChild(QDockWidget, "drawingDock")
+    assert dock is not None
+    assert dock.windowTitle() == "Рисование"
+
+
+def test_drawing_toolbar_exists(window: MainWindow) -> None:
+    """
+    Проверяет, что DrawingToolbar создан в MainWindow.
+    """
+    assert hasattr(window, "drawing_toolbar")
+    assert window.drawing_toolbar is not None
+
+
+def test_drawing_tool_selected_updates_chart(window: MainWindow) -> None:
+    """
+    Проверяет, что выбор инструмента в тулбаре передаётся в ChartWidget.
+    """
+    window.drawing_toolbar._on_tool_clicked("horizontal_line")
+    assert window.chart_widget.active_tool == "horizontal_line"
+
+
+def test_drawing_tool_selected_resets_pending(window: MainWindow) -> None:
+    """
+    Проверяет, что выбор инструмента сбрасывает ожидающую точку в ChartWidget.
+    """
+    window.chart_widget.set_drawing_tool("trend_line")
+    window.chart_widget._pending_point = "test"
+    window.drawing_toolbar._on_tool_clicked("vertical_line")
+    assert window.chart_widget._pending_point is None
+
+
+def test_drawing_color_selected_updates_chart(window: MainWindow) -> None:
+    """
+    Проверяет, что выбор цвета в тулбаре передаётся в ChartWidget.
+    """
+    window.drawing_toolbar.color_selected.emit("#FF0000")
+    assert window.chart_widget.drawing_color == "#FF0000"
+
+
+def test_drawing_clear_clears_chart(window: MainWindow) -> None:
+    """
+    Проверяет, что очистка рисунков работает.
+    """
+    window.chart_widget._drawings.append({"type": "test"})
+    window.drawing_toolbar.clear_requested.emit()
+    assert window.chart_widget._drawings == []
+
+
+def test_drawing_tool_status_messages(window: MainWindow) -> None:
+    """
+    Проверяет сообщения статус-бара при выборе инструментов.
+    """
+    window.drawing_toolbar._on_tool_clicked("horizontal_line")
+    msg = window.statusBar().currentMessage()
+    assert "Горизонтальная" in msg
+
+    window.drawing_toolbar._on_tool_clicked("trend_line")
+    msg = window.statusBar().currentMessage()
+    assert "первую точку" in msg
+
+    window.drawing_toolbar._on_tool_clicked("none")
+    msg = window.statusBar().currentMessage()
+    assert "отключено" in msg
+
+
+def test_drawing_clear_status_message(window: MainWindow) -> None:
+    """
+    Проверяет сообщение статус-бара при очистке рисунков.
+    """
+    window.drawing_toolbar.clear_requested.emit()
+    msg = window.statusBar().currentMessage()
+    assert "очищены" in msg
+
+
+def test_drawing_dock_is_left_dock(window: MainWindow) -> None:
+    """
+    Проверяет, что док-панель рисования находится слева.
+    """
+    dock = window.findChild(QDockWidget, "drawingDock")
+    assert dock is not None
+    # Проверяем, что dock добавлен
+    assert dock in window.findChildren(QDockWidget)
