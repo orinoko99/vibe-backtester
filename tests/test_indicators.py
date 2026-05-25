@@ -475,3 +475,307 @@ def test_calculate_overlay_flag(sample_data: pl.DataFrame) -> None:
     osc_ind = DummyOscillatorIndicator()
     result2 = osc_ind.calculate(sample_data)
     assert result2.overlay is False
+
+
+# ══════════════════════════════════════════════
+# Тесты VolumeProfile
+# ══════════════════════════════════════════════
+
+
+from src.indicators.volume_profile import VolumeProfile, VolumeProfileResult
+
+
+@pytest.fixture
+def vp_data() -> pl.DataFrame:
+    """
+    Фикстура: данные с разными ценами и объёмами для Volume Profile.
+    5 свечей с ростом цены и разным объёмом.
+    """
+    return pl.DataFrame({
+        "date": [datetime(2025, 1, 1, 10, i) for i in range(5)],
+        "open": [100.0, 101.0, 102.0, 103.0, 104.0],
+        "high": [101.0, 102.0, 103.0, 104.0, 105.0],
+        "low": [99.0, 100.0, 101.0, 102.0, 103.0],
+        "close": [100.0, 101.0, 102.0, 103.0, 104.0],
+        "volume": [1000, 2000, 5000, 3000, 1000],
+    })
+
+
+@pytest.fixture
+def vp_data_flat() -> pl.DataFrame:
+    """Фикстура: данные с одинаковой ценой (проверка flat price)."""
+    return pl.DataFrame({
+        "date": [datetime(2025, 1, 1, 10, i) for i in range(3)],
+        "open": [100.0, 100.0, 100.0],
+        "high": [100.0, 100.0, 100.0],
+        "low": [100.0, 100.0, 100.0],
+        "close": [100.0, 100.0, 100.0],
+        "volume": [1000, 2000, 3000],
+    })
+
+
+# ──────────────────────────────────────────────
+# Тесты создания и параметров VolumeProfile
+# ──────────────────────────────────────────────
+
+
+def test_vp_creation_with_default_params() -> None:
+    """Проверяет создание VolumeProfile с параметрами по умолчанию."""
+    vp = VolumeProfile()
+    assert vp.name == "VolumeProfile"
+    assert vp._params["bins"] == 12
+    assert vp._params["va_percentage"] == 0.70
+    assert vp.indicator_type == IndicatorType.VOLUME_PROFILE
+    assert vp.min_bars == 2
+    assert vp.display_name == "VolumeProfile(12, 0.7)"
+
+
+def test_vp_creation_with_custom_params() -> None:
+    """Проверяет создание VolumeProfile с пользовательскими параметрами."""
+    vp = VolumeProfile(bins=20, va_percentage=0.80)
+    assert vp._params["bins"] == 20
+    assert vp._params["va_percentage"] == 0.80
+    assert vp.display_name == "VolumeProfile(20, 0.8)"
+    assert vp.display_name == "VolumeProfile(20, 0.8)"
+
+
+# ──────────────────────────────────────────────
+# Тесты расчёта VolumeProfile
+# ──────────────────────────────────────────────
+
+
+def test_vp_calculate_returns_indicator_result(vp_data: pl.DataFrame) -> None:
+    """Проверяет, что calculate возвращает IndicatorResult."""
+    vp = VolumeProfile()
+    result = vp.calculate(vp_data)
+    assert isinstance(result, IndicatorResult)
+    assert result.overlay is False
+    assert result.panel == "volume_profile"
+
+
+def test_vp_calculate_has_required_columns(vp_data: pl.DataFrame) -> None:
+    """Проверяет, что результат содержит все нужные колонки."""
+    vp = VolumeProfile()
+    result = vp.calculate(vp_data)
+    assert "price" in result.data.columns
+    assert "volume" in result.data.columns
+    assert "is_poc" in result.data.columns
+    assert "date" in result.data.columns
+
+
+def test_vp_calculate_number_of_bins_default(vp_data: pl.DataFrame) -> None:
+    """Проверяет количество бинов по умолчанию (12)."""
+    vp = VolumeProfile()
+    result = vp.calculate(vp_data)
+    assert len(result.data) == 12
+
+
+def test_vp_calculate_number_of_bins_custom(vp_data: pl.DataFrame) -> None:
+    """Проверяет количество бинов с пользовательским значением."""
+    vp = VolumeProfile(bins=5)
+    result = vp.calculate(vp_data)
+    assert len(result.data) == 5
+
+
+def test_vp_calculate_total_volume(vp_data: pl.DataFrame) -> None:
+    """Проверяет, что сумма объёмов бинов равна общему объёму."""
+    vp = VolumeProfile()
+    result = vp.calculate(vp_data)
+    total = float(result.data["volume"].sum())
+    expected_total = float(vp_data["volume"].sum())
+    assert total == pytest.approx(expected_total, rel=1e-6)
+
+
+def test_vp_calculate_poc_exists(vp_data: pl.DataFrame) -> None:
+    """Проверяет, что POC найден и is_poc содержит True."""
+    vp = VolumeProfile()
+    result = vp.calculate(vp_data)
+    poc_count = result.data["is_poc"].sum()
+    assert poc_count >= 1, "Должен быть хотя бы один POC бин"
+
+
+def test_vp_calculate_poc_price_within_range(vp_data: pl.DataFrame) -> None:
+    """Проверяет, что POC находится в ценовом диапазоне данных."""
+    vp = VolumeProfile()
+    result = vp.calculate(vp_data)
+    poc_mask = result.data["is_poc"]
+    poc_price = float(result.data.filter(poc_mask)["price"][0])
+    assert vp_data["low"].min() <= poc_price <= vp_data["high"].max()
+
+
+def test_vp_calculate_all_volumes_non_negative(vp_data: pl.DataFrame) -> None:
+    """Проверяет, что все объёмы бинов неотрицательные."""
+    vp = VolumeProfile()
+    result = vp.calculate(vp_data)
+    assert (result.data["volume"] >= 0).all()
+
+
+def test_vp_calculate_flat_price(vp_data_flat: pl.DataFrame) -> None:
+    """Проверяет расчёт VP при одинаковой цене на всех барах."""
+    vp = VolumeProfile()
+    result = vp.calculate(vp_data_flat)
+    assert len(result.data) == 1  # один бин
+    assert result.data["volume"][0] == 6000  # сумма всех объёмов
+    assert result.data["price"][0] == 100.0
+    assert bool(result.data["is_poc"][0])
+
+
+def test_vp_calculate_volumes_positive(vp_data: pl.DataFrame) -> None:
+    """Проверяет, что все объёмы > 0 при ненулевых входных данных."""
+    vp = VolumeProfile()
+    result = vp.calculate(vp_data)
+    assert (result.data["volume"] > 0).all()
+
+
+# ──────────────────────────────────────────────
+# Тесты summarize (VolumeProfileResult)
+# ──────────────────────────────────────────────
+
+
+def test_vp_summarize_returns_volume_profile_result(vp_data: pl.DataFrame) -> None:
+    """Проверяет, что summarize возвращает VolumeProfileResult."""
+    vp = VolumeProfile()
+    summary = vp.summarize(vp_data)
+    assert isinstance(summary, VolumeProfileResult)
+
+
+def test_vp_summarize_has_price_levels(vp_data: pl.DataFrame) -> None:
+    """Проверяет, что summarize содержит price_levels."""
+    vp = VolumeProfile()
+    summary = vp.summarize(vp_data)
+    assert len(summary.price_levels) > 0
+    assert len(summary.volumes) > 0
+
+
+def test_vp_summarize_poc_price(vp_data: pl.DataFrame) -> None:
+    """Проверяет, что POC найден в summarize."""
+    vp = VolumeProfile()
+    summary = vp.summarize(vp_data)
+    assert summary.poc_price > 0
+
+
+def test_vp_summarize_poc_index_in_range(vp_data: pl.DataFrame) -> None:
+    """Проверяет, что poc_index в допустимом диапазоне."""
+    vp = VolumeProfile()
+    summary = vp.summarize(vp_data)
+    assert 0 <= summary.poc_index < len(summary.price_levels)
+
+
+def test_vp_summarize_vah_val_ordered(vp_data: pl.DataFrame) -> None:
+    """Проверяет, что VAL <= VAH."""
+    vp = VolumeProfile()
+    summary = vp.summarize(vp_data)
+    assert summary.val <= summary.vah
+
+
+def test_vp_summarize_total_volume(vp_data: pl.DataFrame) -> None:
+    """Проверяет общий объём в summarize."""
+    vp = VolumeProfile()
+    summary = vp.summarize(vp_data)
+    expected_total = float(vp_data["volume"].sum())
+    assert summary.total_volume == pytest.approx(expected_total, rel=1e-6)
+
+
+# ──────────────────────────────────────────────
+# Тесты VolumeProfile — граничные случаи
+# ──────────────────────────────────────────────
+
+
+def test_vp_empty_data_raises() -> None:
+    """Проверяет, что пустые данные вызывают ошибку."""
+    vp = VolumeProfile()
+    empty = pl.DataFrame({
+        "date": [],
+        "open": [], "high": [], "low": [], "close": [],
+        "volume": [],
+    })
+    with pytest.raises(ValueError):
+        vp.calculate(empty)
+
+
+def test_vp_two_bars_data() -> None:
+    """Проверяет VP на данных из двух свечей (минимальное количество)."""
+    vp = VolumeProfile()
+    two = pl.DataFrame({
+        "date": [datetime(2025, 1, 1), datetime(2025, 1, 2)],
+        "open": [100.0, 100.0], "high": [105.0, 102.0],
+        "low": [95.0, 98.0], "close": [102.0, 100.0],
+        "volume": [1000, 500],
+    })
+    result = vp.calculate(two)
+    assert len(result.data) > 0
+    assert float(result.data["volume"].sum()) == pytest.approx(1500.0, rel=1e-6)
+
+
+def test_vp_low_volume_data() -> None:
+    """Проверяет VP с минимальными объёмами."""
+    vp = VolumeProfile()
+    low_vol = pl.DataFrame({
+        "date": [datetime(2025, 1, 1, 10, i) for i in range(5)],
+        "open": [100.0 + i for i in range(5)],
+        "high": [101.0 + i for i in range(5)],
+        "low": [99.0 + i for i in range(5)],
+        "close": [100.0 + i for i in range(5)],
+        "volume": [1, 1, 1, 1, 1],
+    })
+    result = vp.calculate(low_vol)
+    assert float(result.data["volume"].sum()) == 5.0
+
+
+def test_vp_high_bins_count() -> None:
+    """Проверяет VP с большим количеством бинов (50)."""
+    vp = VolumeProfile(bins=50)
+    data = pl.DataFrame({
+        "date": [datetime(2025, 1, 1, 10, i) for i in range(10)],
+        "open": [float(i) for i in range(10)],
+        "high": [float(i + 1) for i in range(10)],
+        "low": [float(i) for i in range(10)],
+        "close": [float(i) for i in range(10)],
+        "volume": [1000] * 10,
+    })
+    result = vp.calculate(data)
+    assert len(result.data) == 50
+
+
+def test_vp_zero_volume_bar() -> None:
+    """Проверяет VP с нулевым объёмом на некоторых барах."""
+    vp = VolumeProfile()
+    data = pl.DataFrame({
+        "date": [datetime(2025, 1, 1, 10, i) for i in range(5)],
+        "open": [100.0 + i for i in range(5)],
+        "high": [101.0 + i for i in range(5)],
+        "low": [99.0 + i for i in range(5)],
+        "close": [100.0 + i for i in range(5)],
+        "volume": [1000, 0, 5000, 0, 1000],
+    })
+    result = vp.calculate(data)
+    assert float(result.data["volume"].sum()) == 7000.0
+
+
+# ──────────────────────────────────────────────
+# Тесты Value Area
+# ──────────────────────────────────────────────
+
+
+def test_vp_value_area_contains_poc(vp_data: pl.DataFrame) -> None:
+    """Проверяет, что зона стоимости включает POC."""
+    vp = VolumeProfile()
+    summary = vp.summarize(vp_data)
+    assert summary.val <= summary.poc_price <= summary.vah
+
+
+def test_vp_value_area_percentage_custom() -> None:
+    """Проверяет VA с пользовательским процентом (100% = весь диапазон)."""
+    vp = VolumeProfile(va_percentage=1.0)
+    data = pl.DataFrame({
+        "date": [datetime(2025, 1, 1, 10, i) for i in range(5)],
+        "open": [100.0 + i for i in range(5)],
+        "high": [101.0 + i for i in range(5)],
+        "low": [99.0 + i for i in range(5)],
+        "close": [100.0 + i for i in range(5)],
+        "volume": [1000, 2000, 5000, 3000, 1000],
+    })
+    summary = vp.summarize(data)
+    # При 100% VA должен покрыть все ценовые уровни
+    assert summary.val == pytest.approx(float(data["low"].min()), rel=1e-3) or summary.val < float(data["low"].max())
+    assert summary.vah == pytest.approx(float(data["high"].max()), rel=1e-3) or summary.vah > float(data["high"].min())

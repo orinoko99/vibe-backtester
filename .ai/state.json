@@ -10,7 +10,7 @@
     "Тесты для всех индикаторов + GUI панели",
     "Обновление файлов: completed_tasks, tests.json, error_log"
   ],
-  "step_index": 1,
+  "step_index": 2,
   "mode": "GIT",
   "status": "committing",
   "attempts": 0,
