@@ -1,17 +1,18 @@
 {
-  "current_task": "Этап 2.2 — Портфельное тестирование + тесты",
+  "current_task": "Этап 2.3 — Volume Profile и дополнительные индикаторы",
   "plan": [
-    "Создать модель PortfolioData для хранения весов инструментов и капитала",
-    "Создать класс PortfolioBacktestEngine для прогона нескольких стратегий по портфелю",
-    "Реализовать стратегии распределения капитала (равномерное, взвешенное)",
-    "Реализовать ребалансировку портфеля по календарю",
-    "Рассчитать метрики портфеля (общая доходность, Sharpe портфеля, корреляция)",
-    "Написать тесты для портфельного тестирования",
-    "Запустить тесты и зафиксировать результат"
+    "src/indicators/base.py — Базовый класс индикатора",
+    "src/indicators/volume_profile.py — Volume Profile",
+    "src/indicators/overlay.py — Наложенные индикаторы (SMA, EMA, Bollinger)",
+    "src/indicators/oscillators.py — Осцилляторы (RSI, MACD)",
+    "src/gui/indicators_panel.py — Панель выбора индикаторов в GUI",
+    "src/gui/chart_widget.py — Интеграция индикаторов в график",
+    "Тесты для всех индикаторов + GUI панели",
+    "Обновление файлов: completed_tasks, tests.json, error_log"
   ],
-  "step_index": 6,
-  "mode": "REVIEWER",
-  "status": "done",
+  "step_index": 1,
+  "mode": "GIT",
+  "status": "committing",
   "attempts": 0,
   "tests": {
     "written": true,
@@ -21,8 +22,8 @@
     "done": true
   },
   "logging": {
-    "bugs_recorded": true,
-    "fixes_recorded": true
+    "bugs_recorded": false,
+    "fixes_recorded": false
   },
   "git": {
     "committed": false,
