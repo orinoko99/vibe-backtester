@@ -10,7 +10,7 @@
     "Тесты для всех индикаторов + GUI панели",
     "Обновление файлов: completed_tasks, tests.json, error_log"
   ],
-  "step_index": 5,
+  "step_index": 6,
   "mode": "CODER",
   "status": "coding",
   "attempts": 0,

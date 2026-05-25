@@ -16,6 +16,9 @@ import pandas as pd
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from lightweight_charts.widgets import QtChart
+from lightweight_charts.abstract import Line, Histogram
+
+from src.indicators.base import IndicatorResult, IndicatorType
 
 
 # Типы для подсказок
@@ -83,6 +86,11 @@ class ChartWidget(QWidget):
 
         # Состояние для двухточечных инструментов (trend_line)
         self._pending_point: tuple[datetime, float] | None = None
+
+        # Активные индикаторы и их подчарты
+        self._indicator_lines: dict[str, Line] = {}
+        self._indicator_hists: dict[str, Histogram] = {}
+        self._indicator_subcharts: dict[str, QtChart] = {}
 
         # Подписываемся на клик по графику для интерактивного рисования
         self._on_click(lambda time, price: self._handle_chart_click(time, price))
@@ -532,3 +540,162 @@ class ChartWidget(QWidget):
                     end_time=time, end_value=price,
                 )
                 self._pending_point = None
+
+    # ══════════════════════════════════════════════
+    # Управление индикаторами
+    # ══════════════════════════════════════════════
+
+    def add_indicator(self, indicator_result: IndicatorResult) -> None:
+        """
+        Добавляет рассчитанный индикатор на график.
+
+        Автоматически определяет способ отображения:
+        - OVERLAY → линия на основном графике
+        - OSCILLATOR → линия на отдельной панели под графиком
+        - VOLUME_PROFILE → гистограмма на основном графике
+
+        Параметры:
+            indicator_result: Результат расчёта индикатора.
+        """
+        # Определяем имя индикатора по первой серии в series_names
+        if not indicator_result.series_names:
+            return
+
+        # Преобразуем IndicatorResult в Pandas DataFrame
+        pandas_df = self._indicator_result_to_pandas(indicator_result)
+        indicator_name = indicator_result.panel or "indicator"
+
+        if indicator_result.overlay:
+            # OVERLAY — линия поверх свечей
+            for series_name, color in indicator_result.series_names.items():
+                if series_name not in pandas_df.columns:
+                    continue
+
+                line_name = f"{indicator_name}_{series_name}"
+                # lightweight-charts требует, чтобы колонка в DataFrame
+                # совпадала с именем линии (если имя задано)
+                line_df = pandas_df[["time", series_name]].copy()
+                line_df.columns = ["time", line_name]
+                line_df = line_df.dropna()
+
+                if line_df.empty:
+                    continue
+
+                # Создаём или обновляем линию
+                if line_name in self._indicator_lines:
+                    line = self._indicator_lines[line_name]
+                    line.set(line_df)
+                else:
+                    line = self.chart.create_line(
+                        name=line_name,
+                        color=color,
+                        width=2,
+                    )
+                    line.set(line_df)
+                    self._indicator_lines[line_name] = line
+
+        else:
+            # OSCILLATOR или VOLUME_PROFILE — создаём подчарт
+            series_cols = [c for c in pandas_df.columns if c != "time"]
+            if not series_cols:
+                return
+
+            if indicator_name not in self._indicator_subcharts:
+                # Создаём подчарт высотой 30% от основного
+                subchart = self.chart.create_subchart(
+                    position="bottom",
+                    height=0.3,
+                    sync=True,
+                )
+                self._indicator_subcharts[indicator_name] = subchart
+
+            subchart = self._indicator_subcharts[indicator_name]
+
+            for series_name, color in indicator_result.series_names.items():
+                if series_name not in pandas_df.columns:
+                    continue
+
+                line_name = f"{indicator_name}_{series_name}"
+                line_df = pandas_df[["time", series_name]].copy()
+                line_df.columns = ["time", line_name]
+                line_df = line_df.dropna()
+
+                if line_df.empty:
+                    continue
+
+                key = f"sub_{line_name}"
+                if key in self._indicator_lines:
+                    line = self._indicator_lines[key]
+                    line.set(line_df)
+                else:
+                    line = subchart.create_line(
+                        name=line_name,
+                        color=color,
+                        width=2,
+                        price_line=False,
+                        price_label=False,
+                    )
+                    line.set(line_df)
+                    self._indicator_lines[key] = line
+
+    def remove_indicator(self, name: str) -> None:
+        """
+        Удаляет индикатор и его линии/подчарт с графика.
+
+        Параметры:
+            name: Имя индикатора (panel или display_name).
+        """
+        # Удаляем линии, связанные с индикатором
+        keys_to_remove: list[str] = []
+        for key in self._indicator_lines:
+            if key.startswith(name) or f"_{name}" in key:
+                keys_to_remove.append(key)
+
+        for key in keys_to_remove:
+            del self._indicator_lines[key]
+
+        # Удаляем подчарт
+        if name in self._indicator_subcharts:
+            subchart = self._indicator_subcharts.pop(name)
+            # subchart.remove() — если такой метод есть, иначе скрываем
+            subchart.hide_data()
+
+    def clear_indicators(self) -> None:
+        """Удаляет все индикаторы с графика."""
+        for subchart in self._indicator_subcharts.values():
+            subchart.hide_data()
+
+        self._indicator_lines.clear()
+        self._indicator_hists.clear()
+        self._indicator_subcharts.clear()
+
+    def _indicator_result_to_pandas(
+        self, indicator_result: IndicatorResult,
+    ) -> pd.DataFrame:
+        """
+        Преобразует IndicatorResult в Pandas DataFrame для lightweight-charts.
+
+        Параметры:
+            indicator_result: Результат расчёта индикатора.
+
+        Возвращает:
+            Pandas DataFrame с колонкой 'time' и рядами значений.
+        """
+        df = indicator_result.data.to_pandas()
+
+        # Переименовываем колонку date/time
+        if "time" not in df.columns:
+            for col in ("date", "Date", "datetime", "DateTime"):
+                if col in df.columns:
+                    df = df.rename(columns={col: "time"})
+                    break
+
+        # Форматируем время
+        if "time" in df.columns and hasattr(df["time"], "dtype"):
+            if str(df["time"].dtype) == "datetime64[ns]":
+                df["time"] = df["time"].dt.strftime("%Y-%m-%dT%H:%M:%S")
+            elif df["time"].dtype == "object":
+                # Если это строка — пробуем оставить как есть
+                pass
+
+        return df

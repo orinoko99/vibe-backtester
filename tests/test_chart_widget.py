@@ -559,3 +559,210 @@ def test_set_drawing_tool_resets_pending(chart_widget: ChartWidget) -> None:
     # Смена инструмента сбрасывает ожидание
     chart_widget.set_drawing_tool("horizontal_line")
     assert chart_widget._pending_point is None
+
+
+# ══════════════════════════════════════════════
+# Тесты интеграции индикаторов в ChartWidget
+# ══════════════════════════════════════════════
+
+
+from src.indicators.base import IndicatorResult, IndicatorType
+from src.indicators.overlay import SMA, EMA, BollingerBands
+from src.indicators.oscillators import RSI, MACD
+
+
+@pytest.fixture
+def indicator_data() -> pl.DataFrame:
+    """Фикстура: 10 свечей для теста индикаторов."""
+    return pl.DataFrame({
+        "date": [datetime(2025, 1, 1, 10, i) for i in range(10)],
+        "open": [100.0 + i for i in range(10)],
+        "high": [101.0 + i for i in range(10)],
+        "low": [99.0 + i for i in range(10)],
+        "close": [100.0 + i for i in range(10)],
+        "volume": [1000] * 10,
+    })
+
+
+def test_chart_indicator_initial_state(qtbot) -> None:
+    """Проверяет начальное состояние индикаторов в ChartWidget."""
+    chart = ChartWidget()
+    qtbot.addWidget(chart)
+    assert chart._indicator_lines == {}
+    assert chart._indicator_subcharts == {}
+
+
+def test_add_sma_indicator(qtbot, indicator_data: pl.DataFrame) -> None:
+    """Проверяет добавление SMA индикатора (overlay)."""
+    chart = ChartWidget()
+    qtbot.addWidget(chart)
+
+    sma = SMA(period=3)
+    result = sma.calculate(indicator_data)
+    chart.add_indicator(result)
+
+    assert len(chart._indicator_lines) == 1
+    assert any("sma" in key for key in chart._indicator_lines)
+
+
+def test_add_ema_indicator(qtbot, indicator_data: pl.DataFrame) -> None:
+    """Проверяет добавление EMA индикатора (overlay)."""
+    chart = ChartWidget()
+    qtbot.addWidget(chart)
+
+    ema = EMA(period=3)
+    result = ema.calculate(indicator_data)
+    chart.add_indicator(result)
+
+    assert len(chart._indicator_lines) == 1
+    assert any("ema" in key for key in chart._indicator_lines)
+
+
+def test_add_bollinger_bands(qtbot, indicator_data: pl.DataFrame) -> None:
+    """Проверяет добавление Bollinger Bands (3 линии)."""
+    chart = ChartWidget()
+    qtbot.addWidget(chart)
+
+    bb = BollingerBands(period=3)
+    result = bb.calculate(indicator_data)
+    chart.add_indicator(result)
+
+    # BB создаёт 3 линии: upper, middle, lower
+    assert len(chart._indicator_lines) == 3
+
+
+def test_add_rsi_indicator(qtbot, indicator_data: pl.DataFrame) -> None:
+    """Проверяет добавление RSI индикатора (осциллятор, подчарт)."""
+    chart = ChartWidget()
+    qtbot.addWidget(chart)
+
+    rsi = RSI(period=5)
+    result = rsi.calculate(indicator_data)
+    chart.add_indicator(result)
+
+    # RSI создаёт подчарт
+    assert len(chart._indicator_subcharts) == 1
+    assert "rsi" in chart._indicator_subcharts
+
+
+def test_add_macd_indicator(qtbot, indicator_data: pl.DataFrame) -> None:
+    """Проверяет добавление MACD индикатора (осциллятор, подчарт)."""
+    chart = ChartWidget()
+    qtbot.addWidget(chart)
+
+    macd = MACD(fast_period=5, slow_period=8, signal_period=3)
+    result = macd.calculate(indicator_data)
+    chart.add_indicator(result)
+
+    # MACD создаёт подчарт с 3 линиями
+    assert len(chart._indicator_subcharts) == 1
+    assert "macd" in chart._indicator_subcharts
+
+
+def test_remove_indicator(qtbot, indicator_data: pl.DataFrame) -> None:
+    """Проверяет удаление индикатора."""
+    chart = ChartWidget()
+    qtbot.addWidget(chart)
+
+    sma = SMA(period=3)
+    result = sma.calculate(indicator_data)
+    chart.add_indicator(result)
+    assert len(chart._indicator_lines) == 1
+
+    chart.remove_indicator("sma")
+    assert len(chart._indicator_lines) == 0
+
+
+def test_clear_indicators(qtbot, indicator_data: pl.DataFrame) -> None:
+    """Проверяет очистку всех индикаторов."""
+    chart = ChartWidget()
+    qtbot.addWidget(chart)
+
+    sma = SMA(period=3)
+    rsi = RSI(period=5)
+
+    chart.add_indicator(sma.calculate(indicator_data))
+    chart.add_indicator(rsi.calculate(indicator_data))
+
+    assert len(chart._indicator_lines) > 0 or len(chart._indicator_subcharts) > 0
+
+    chart.clear_indicators()
+    assert chart._indicator_lines == {}
+    assert chart._indicator_subcharts == {}
+
+
+def test_add_multiple_overlay_indicators(qtbot, indicator_data: pl.DataFrame) -> None:
+    """Проверяет добавление нескольких overlay индикаторов."""
+    chart = ChartWidget()
+    qtbot.addWidget(chart)
+
+    sma = SMA(period=3)
+    ema = EMA(period=5)
+
+    chart.add_indicator(sma.calculate(indicator_data))
+    chart.add_indicator(ema.calculate(indicator_data))
+
+    # Должно быть 2 линии: sma + ema
+    assert len(chart._indicator_lines) == 2
+
+
+def test_add_multiple_oscillators(qtbot, indicator_data: pl.DataFrame) -> None:
+    """Проверяет добавление нескольких осцилляторов (разные подчарты)."""
+    chart = ChartWidget()
+    qtbot.addWidget(chart)
+
+    rsi = RSI(period=5)
+    macd = MACD(fast_period=5, slow_period=8, signal_period=3)
+
+    chart.add_indicator(rsi.calculate(indicator_data))
+    chart.add_indicator(macd.calculate(indicator_data))
+
+    # Должно быть 2 подчарта
+    assert len(chart._indicator_subcharts) == 2
+    assert "rsi" in chart._indicator_subcharts
+    assert "macd" in chart._indicator_subcharts
+
+
+def test_add_indicator_empty_result(qtbot) -> None:
+    """Проверяет добавление пустого результата (без серий)."""
+    chart = ChartWidget()
+    qtbot.addWidget(chart)
+
+    empty = IndicatorResult(
+        data=pl.DataFrame({"date": [datetime(2025, 1, 1)], "value": [1.0]}),
+        series_names={},
+    )
+    chart.add_indicator(empty)
+    assert chart._indicator_lines == {}
+    assert chart._indicator_subcharts == {}
+
+
+def test_add_indicator_with_nan_values(qtbot) -> None:
+    """Проверяет добавление индикатора с NaN значениями."""
+    chart = ChartWidget()
+    qtbot.addWidget(chart)
+
+    data = pl.DataFrame({
+        "date": [datetime(2025, 1, 1, 10, i) for i in range(10)],
+        "sma": [float("nan")] * 5 + [float(100 + i) for i in range(5, 10)],
+    })
+    result = IndicatorResult(
+        data=data,
+        series_names={"sma": "#FF9800"},
+        overlay=True,
+    )
+    chart.add_indicator(result)
+    assert len(chart._indicator_lines) == 1
+
+
+def test_indicator_result_to_pandas(qtbot, indicator_data: pl.DataFrame) -> None:
+    """Проверяет преобразование IndicatorResult в Pandas."""
+    chart = ChartWidget()
+    qtbot.addWidget(chart)
+
+    sma = SMA(period=3)
+    result = sma.calculate(indicator_data)
+    pdf = chart._indicator_result_to_pandas(result)
+
+    assert "time" in pdf.columns
+    assert "sma" in pdf.columns
