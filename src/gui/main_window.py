@@ -5,7 +5,7 @@
 строкой меню, статус-баром и областями для док-панелей.
 """
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QComboBox,
@@ -546,9 +546,8 @@ class MainWindow(QMainWindow):
                 self._loaded_start = str(dates[0])
                 self._loaded_end = str(dates[-1])
 
-            # Если нет сохранённой позиции — показываем все данные целиком
-            if not has_saved:
-                self.chart_widget.fit()
+            # Подгоняем масштаб с микро-задержкой, чтобы WebEngine успел отрисовать данные
+            QTimer.singleShot(50, self.chart_widget.fit)
 
             # Обновляем заголовок и статус
             self.chart_widget.set_title(sec_code)
