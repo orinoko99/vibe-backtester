@@ -1,27 +1,28 @@
 {
-  "current_task": "Этап 2.1 — Реализовать движок бэктестинга (одиночные стратегии) + тесты",
+  "current_task": "Этап 2.2 — Портфельное тестирование + тесты",
   "plan": [
-    "Создать базовый класс Strategy с интерфейсом init/next",
-    "Создать BacktestEngine для прогона стратегии по данным",
-    "Реализовать трекинг позиций и сделок (Order, Position, Trade)",
-    "Реализовать расчёт метрик производительности (total return, Sharpe, max drawdown)",
-    "Написать тесты для Strategy, BacktestEngine и метрик",
+    "Создать модель PortfolioData для хранения весов инструментов и капитала",
+    "Создать класс PortfolioBacktestEngine для прогона нескольких стратегий по портфелю",
+    "Реализовать стратегии распределения капитала (равномерное, взвешенное)",
+    "Реализовать ребалансировку портфеля по календарю",
+    "Рассчитать метрики портфеля (общая доходность, Sharpe портфеля, корреляция)",
+    "Написать тесты для портфельного тестирования",
     "Запустить тесты и зафиксировать результат"
   ],
   "step_index": 6,
   "mode": "REVIEWER",
-  "status": "testing",
+  "status": "done",
   "attempts": 0,
   "tests": {
     "written": true,
     "last_result": "pass"
   },
   "review": {
-    "done": false
+    "done": true
   },
   "logging": {
-    "bugs_recorded": false,
-    "fixes_recorded": false
+    "bugs_recorded": true,
+    "fixes_recorded": true
   },
   "git": {
     "committed": false,
