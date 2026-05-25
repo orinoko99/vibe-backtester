@@ -13,6 +13,8 @@ from typing import Any, Callable, Literal
 
 import polars as pl
 import pandas as pd
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QShortcut, QKeySequence
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from lightweight_charts.widgets import QtChart
@@ -92,12 +94,22 @@ class ChartWidget(QWidget):
         self._indicator_hists: dict[str, Any] = {}
         self._indicator_subcharts: dict[str, QtChart] = {}
 
+        # Кэш всех загруженных свечей для мержа при динамической подгрузке
+        self._cached_candles: pl.DataFrame | None = None
+
         # Подписываемся на клик по графику для интерактивного рисования
         self._on_click(lambda time, price: self._handle_chart_click(time, price))
 
-    def load_candles(self, dataframe: pl.DataFrame) -> None:
+        # Spacebar — переход к последним котировкам
+        self._scroll_shortcut = QShortcut(QKeySequence(Qt.Key_Space), self)
+        self._scroll_shortcut.activated.connect(self.scroll_to_last)
+
+    def load_candles(self, dataframe: pl.DataFrame, replace: bool = True) -> None:
         """
         Загружает свечные данные в график из Polars DataFrame.
+
+        Если replace=True — заменяет все данные новыми.
+        Если replace=False — мержит с кэшированными данными (для динамической подгрузки).
 
         Ожидаемые колонки в Polars DataFrame:
         - date (Datetime или str): дата/время свечи
@@ -107,14 +119,21 @@ class ChartWidget(QWidget):
         - close (float): цена закрытия
         - volume (int, опционально): объём торгов
 
-        Библиотека lightweight-charts ожидает Pandas DataFrame с колонками
-        time, open, high, low, close (volume опционально).
-
         Параметры:
             dataframe: Polars DataFrame со свечными данными.
+            replace: True — полная замена, False — мерж с кэшем.
         """
         if dataframe.is_empty():
             return
+
+        # Мержим с кэшем, если это догрузка
+        if not replace and self._cached_candles is not None and not self._cached_candles.is_empty():
+            dataframe = pl.concat([self._cached_candles, dataframe]).unique(
+                subset=["date"], keep="first"
+            ).sort("date")
+
+        # Сохраняем в кэш
+        self._cached_candles = dataframe
 
         # Конвертируем Polars в Pandas для передачи в lightweight-charts
         pandas_df = dataframe.to_pandas()
@@ -159,6 +178,14 @@ class ChartWidget(QWidget):
         """Автоматически подгоняет масштаб графика под все загруженные данные."""
         self.chart.fit()
 
+    def scroll_to_last(self) -> None:
+        """Перемещает график к последней свече (последним котировкам)."""
+        self.chart.fit()
+        # Вызываем JS для скролла к реальному времени
+        self.webview.page().runJavaScript(
+            "try { chart.timeScale().scrollToRealTime(); } catch(e) {}"
+        )
+
     def set_title(self, title: str) -> None:
         """
         Устанавливает заголовок графика.
@@ -171,6 +198,7 @@ class ChartWidget(QWidget):
     def clear(self) -> None:
         """Очищает все данные с графика."""
         self.chart.hide_data()
+        self._cached_candles = None
 
     def on_range_change(self, callback) -> None:
         """

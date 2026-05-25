@@ -46,6 +46,9 @@ class InstrumentPanel(QWidget):
         # Создаём интерфейс
         self._setup_ui()
 
+        # Автоматически загружаем список инструментов при запуске
+        self._request_refresh()
+
     def _setup_ui(self) -> None:
         """Создаёт элементы интерфейса панели."""
         layout = QVBoxLayout()

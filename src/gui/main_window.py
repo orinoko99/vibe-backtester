@@ -70,6 +70,9 @@ class MainWindow(QMainWindow):
         self._loaded_end: str | None = None    # максимальная загруженная дата
         self._last_visible_range: tuple[int, int] | None = None  # bars_before, bars_after
 
+        # Сохранённые позиции камеры по инструментам: ключ (db_path, sec_code, timeframe) -> (start_date, end_date)
+        self._camera_positions: dict[tuple[str, str, str], tuple[str, str]] = {}
+
         # Создаём центральный виджет-контейнер для графика
         self._create_central_widget()
 
@@ -231,17 +234,46 @@ class MainWindow(QMainWindow):
         """
         Обрабатывает выбор инструмента в панели.
 
-        Загружает данные выбранного инструмента и отображает на графике.
+        Сохраняет позицию камеры текущего инструмента, загружает данные
+        нового инструмента и восстанавливает его позицию камеры.
 
         Параметры:
             db_path: Путь к БД инструмента.
             sec_code: Код инструмента.
         """
+        # Сохраняем позицию камеры для текущего инструмента
+        self._save_camera_position()
+
         self._current_db_path = db_path
         self._current_sec_code = sec_code
 
         self.set_status_message(f"Выбран инструмент: {sec_code}")
         self.load_and_display(db_path, sec_code)
+
+    def _save_camera_position(self) -> None:
+        """Сохраняет текущую видимую область графика для текущего инструмента."""
+        if self._current_db_path and self._current_sec_code and self._loaded_start and self._loaded_end:
+            key = (self._current_db_path, self._current_sec_code, self._current_timeframe)
+            self._camera_positions[key] = (self._loaded_start, self._loaded_end)
+
+    def _restore_camera_position(self, db_path: str, sec_code: str) -> bool:
+        """
+        Восстанавливает сохранённую позицию камеры для инструмента.
+
+        Параметры:
+            db_path: Путь к БД.
+            sec_code: Код инструмента.
+
+        Возвращает:
+            True, если позиция восстановлена, иначе False.
+        """
+        key = (db_path, sec_code, self._current_timeframe)
+        if key in self._camera_positions:
+            start, end = self._camera_positions[key]
+            self._loaded_start = start
+            self._loaded_end = end
+            return True
+        return False
 
     def _on_timeframe_changed(self, timeframe: str) -> None:
         """
@@ -336,6 +368,9 @@ class MainWindow(QMainWindow):
         # Сохраняем последние значения для оценки размера видимой области
         self._last_visible_range = (int(bars_before), int(bars_after))
 
+        # Сохраняем позицию камеры при изменении видимого диапазона
+        self._save_camera_position()
+
         # Если инструмент не выбран — игнорируем
         if not self._current_db_path or not self._current_sec_code:
             return
@@ -383,7 +418,7 @@ class MainWindow(QMainWindow):
             )
 
             if not df.is_empty():
-                self.chart_widget.load_candles(df)
+                self.chart_widget.load_candles(df, replace=False)
                 self._loaded_start = new_start_str
                 self.set_status_message(
                     f"Подгружено {len(df)} свечей слева для {self._current_sec_code}"
@@ -420,7 +455,7 @@ class MainWindow(QMainWindow):
             )
 
             if not df.is_empty():
-                self.chart_widget.load_candles(df)
+                self.chart_widget.load_candles(df, replace=False)
                 self._loaded_end = new_end_str
                 self.set_status_message(
                     f"Подгружено {len(df)} свечей справа для {self._current_sec_code}"
@@ -477,12 +512,24 @@ class MainWindow(QMainWindow):
             if timeframe is None:
                 timeframe = self._current_timeframe
 
+            # Восстанавливаем сохранённую позицию камеры, если есть
+            has_saved = self._restore_camera_position(db_path, sec_code)
+
+            # Если есть сохранённая позиция — грузим только её диапазон с запасом
+            load_start = start_date
+            load_end = end_date
+            if has_saved and self._loaded_start and self._loaded_end:
+                start_dt = pl.Series([self._loaded_start]).str.to_datetime("%Y-%m-%d %H:%M:%S")[0]
+                end_dt = pl.Series([self._loaded_end]).str.to_datetime("%Y-%m-%d %H:%M:%S")[0]
+                load_start = (start_dt - timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
+                load_end = (end_dt + timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
+
             # Загружаем данные через loader
             df = load_candles(
                 db_path=db_path,
                 sec_code=sec_code,
-                start_date=start_date,
-                end_date=end_date,
+                start_date=load_start,
+                end_date=load_end,
                 timeframe=timeframe,
             )
 
@@ -492,7 +539,16 @@ class MainWindow(QMainWindow):
 
             # Отображаем данные на графике
             self.chart_widget.load_candles(df)
-            self.chart_widget.fit()
+
+            # Сохраняем диапазон загруженных данных
+            dates = df["date"]
+            if len(dates) > 0:
+                self._loaded_start = str(dates[0])
+                self._loaded_end = str(dates[-1])
+
+            # Если нет сохранённой позиции — показываем все данные целиком
+            if not has_saved:
+                self.chart_widget.fit()
 
             # Обновляем заголовок и статус
             self.chart_widget.set_title(sec_code)
@@ -500,13 +556,6 @@ class MainWindow(QMainWindow):
             self.set_status_message(
                 f"Загружено {count} свечей для {sec_code}"
             )
-
-            # Сохраняем диапазон загруженных данных для динамической подгрузки
-            if not df.is_empty():
-                dates = df["date"]
-                if len(dates) > 0:
-                    self._loaded_start = str(dates[0])
-                    self._loaded_end = str(dates[-1])
 
         except FileNotFoundError as exc:
             self.set_status_message(f"Ошибка: {exc}")
