@@ -72,11 +72,12 @@ class ChartWidget(QWidget):
 
         # Создаём экземпляр lightweight-charts графика
         # QtChart создаёт внутри QWebEngineView и настраивает QWebChannel
+        # toolbox=True — перетаскивание нарисованных примитивов на графике
         self.chart = QtChart(
             widget=self,
             inner_width=1.0,
             inner_height=1.0,
-            toolbox=False,
+            toolbox=True,
         )
 
         # Получаем ссылку на webview и добавляем его в макет
@@ -87,10 +88,15 @@ class ChartWidget(QWidget):
         # Состояние инструментов рисования
         self.active_tool: DrawingToolType = "none"
         self.drawing_color: str = "#1E80F0"
+        # Подпись для новых рисунков (поле «Текст» на панели над графиком)
+        self.drawing_text: str = ""
         self._drawings: list[dict[str, Any]] = []
 
-        # Состояние для двухточечных инструментов (trend_line)
-        self._pending_point: tuple[datetime, float] | None = None
+        # Ожидающая точка для двухшаговых инструментов (время в формате шкалы графика)
+        self._pending_point: tuple[float, float | None] | None = None
+
+        # Колбэк при изменении списка рисунков (для обновления UI)
+        self.on_drawings_changed: Callable[[], None] | None = None
 
         # Активные индикаторы и их подчарты
         self._indicator_lines: dict[str, Line] = {}
@@ -99,6 +105,9 @@ class ChartWidget(QWidget):
 
         # Кэш всех загруженных свечей для мержа при динамической подгрузке
         self._cached_candles: pl.DataFrame | None = None
+
+        # Хеш последних загруженных данных для защиты от повторного chart.set()
+        self._last_data_hash: int = 0
 
         # Подписываемся на клик по графику для интерактивного рисования
         self._on_click(lambda time, price: self._handle_chart_click(time, price))
@@ -170,12 +179,21 @@ class ChartWidget(QWidget):
 
         result_df = result_df[required_cols + (["volume"] if "volume" in result_df.columns else [])]
 
-        # Форматируем время: если это datetime, конвертируем в строку ISO
+        # Форматируем время: lightweight-charts сам конвертирует datetime в Unix
+        # timestamp внутри _df_datetime_format. Передаём datetime64[ns] как есть.
         if result_df["time"].dtype == "datetime64[ns]":
             result_df["time"] = result_df["time"].dt.strftime("%Y-%m-%dT%H:%M:%S")
 
+        # Проверяем, изменились ли данные (защита от повторного chart.set())
+        data_hash = hash(str(result_df.values.tobytes()))
+        if replace and data_hash == self._last_data_hash:
+            return
+
         # Загружаем данные в график (ожидает Pandas DataFrame)
         self.chart.set(result_df)
+
+        if replace:
+            self._last_data_hash = data_hash
 
     def fit(self) -> None:
         """Автоматически подгоняет масштаб графика под все загруженные данные."""
@@ -234,6 +252,40 @@ class ChartWidget(QWidget):
         self.active_tool = tool
         self._pending_point = None
 
+    def _coerce_chart_time(self, value: Any) -> float:
+        """
+        Преобразует сохранённое время в формат шкалы графика (float).
+
+        В _drawings время хранится как float; старые записи могли быть str '1740.0'.
+        """
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            try:
+                return float(value)
+            except ValueError:
+                return self.chart._single_datetime_format(value)
+        return self.chart._single_datetime_format(value)
+
+    def _fill_color(self, color: str | None) -> str:
+        """Полупрозрачная заливка для box/vertical_span."""
+        c = color or self.drawing_color
+        if c.startswith("#") and len(c) == 7:
+            r, g, b = int(c[1:3], 16), int(c[3:5], 16), int(c[5:7], 16)
+            return f"rgba({r}, {g}, {b}, 0.2)"
+        if c.startswith("rgb("):
+            return c.replace("rgb(", "rgba(").replace(")", ", 0.2)")
+        return c
+
+    def _price_range_from_cache(self) -> tuple[float, float]:
+        """Минимум/максимум цен по загруженным свечам (для заливки на весь экран)."""
+        if self._cached_candles is None or self._cached_candles.is_empty():
+            return 0.0, 1.0
+        return (
+            float(self._cached_candles["low"].min()),
+            float(self._cached_candles["high"].max()),
+        )
+
     def set_drawing_color(self, color: str) -> None:
         """
         Устанавливает цвет для новых рисунков.
@@ -242,6 +294,10 @@ class ChartWidget(QWidget):
             color: Цвет в формате HEX (#RRGGBB) или rgba(...).
         """
         self.drawing_color = color
+
+    def set_drawing_text(self, text: str) -> None:
+        """Устанавливает текст подписи для новых рисунков."""
+        self.drawing_text = text or ""
 
     def add_horizontal_line(
         self,
@@ -266,19 +322,30 @@ class ChartWidget(QWidget):
         Возвращает:
             Объект HorizontalLine.
         """
+        line_color = color or self.drawing_color
+        entry_index = len(self._drawings)
+
+        def on_drag(chart: Any, line: Any) -> None:
+            """Обновляет цену в списке рисунков при перетаскивании линии."""
+            if entry_index < len(self._drawings):
+                self._drawings[entry_index]["price"] = float(line.price)
+                self._notify_drawings_changed()
+
         result = self.chart.horizontal_line(
             price=price,
-            color=color or self.drawing_color,
+            color=line_color,
             width=width,
             style=style,
             text=text,
             axis_label_visible=axis_label_visible,
+            func=on_drag,
         )
         self._drawings.append({
             "type": "horizontal_line",
             "object": result,
             "price": price,
-            "color": color or self.drawing_color,
+            "color": line_color,
+            "text": text,
         })
         return result
 
@@ -303,8 +370,9 @@ class ChartWidget(QWidget):
         Возвращает:
             Объект VerticalLine.
         """
+        chart_time = self._coerce_chart_time(time)
         result = self.chart.vertical_line(
-            time=time,
+            time=chart_time,
             color=color or self.drawing_color,
             width=width,
             style=style,
@@ -313,8 +381,9 @@ class ChartWidget(QWidget):
         self._drawings.append({
             "type": "vertical_line",
             "object": result,
-            "time": str(time),
+            "time": chart_time,
             "color": color or self.drawing_color,
+            "text": text,
         })
         return result
 
@@ -355,9 +424,9 @@ class ChartWidget(QWidget):
         self._drawings.append({
             "type": "trend_line",
             "object": result,
-            "start_time": str(start_time),
+            "start_time": self._coerce_chart_time(start_time),
             "start_value": start_value,
-            "end_time": str(end_time),
+            "end_time": self._coerce_chart_time(end_time),
             "end_value": end_value,
             "color": color or self.drawing_color,
         })
@@ -397,9 +466,10 @@ class ChartWidget(QWidget):
         self._drawings.append({
             "type": "ray_line",
             "object": result,
-            "start_time": str(start_time),
+            "start_time": self._coerce_chart_time(start_time),
             "value": value,
             "color": color or self.drawing_color,
+            "text": text,
         })
         return result
 
@@ -407,32 +477,46 @@ class ChartWidget(QWidget):
         self,
         start_time: datetime | str | float | tuple | list,
         end_time: datetime | str | float | None = None,
+        start_value: float | None = None,
+        end_value: float | None = None,
         color: str | None = None,
     ) -> Any:
         """
-        Добавляет вертикальную заливку (прямоугольник) между двумя датами.
+        Добавляет вертикальную заливку между двумя моментами времени.
 
-        Параметры:
-            start_time: Начальное время (или кортеж/список [start, end]).
-            end_time: Конечное время (если не задано в start_time).
-            color: Цвет заливки. Если None — используется drawing_color.
-
-        Возвращает:
-            Объект VerticalSpan.
+        Использует chart.box вместо vertical_span библиотеки (там нет calculateTrendLine в JS).
         """
-        result = self.chart.vertical_span(
-            start_time=start_time,
-            end_time=end_time,
-            color=color or self.drawing_color.replace(
-                "rgb", "rgba"
-            ).replace(")", ", 0.2)") if color is None and self.drawing_color.startswith("rgb") else (color or self.drawing_color),
+        t0 = self._coerce_chart_time(start_time)
+        t1 = self._coerce_chart_time(end_time) if end_time is not None else t0
+        if t0 > t1:
+            t0, t1 = t1, t0
+
+        lo, hi = self._price_range_from_cache()
+        v0 = float(start_value) if start_value is not None else lo
+        v1 = float(end_value) if end_value is not None else hi
+        price_lo, price_hi = min(v0, v1), max(v0, v1)
+
+        line_color = color or self.drawing_color
+        fill_color = self._fill_color(color)
+
+        result = self.chart.box(
+            start_time=t0,
+            start_value=price_lo,
+            end_time=t1,
+            end_value=price_hi,
+            color=line_color,
+            fill_color=fill_color,
+            width=1,
+            style="solid",
         )
         self._drawings.append({
             "type": "vertical_span",
             "object": result,
-            "start_time": str(start_time),
-            "end_time": str(end_time),
-            "color": color or self.drawing_color,
+            "start_time": t0,
+            "end_time": t1,
+            "start_value": price_lo,
+            "end_value": price_hi,
+            "color": line_color,
         })
         return result
 
@@ -457,8 +541,9 @@ class ChartWidget(QWidget):
         Возвращает:
             ID созданного маркера (str).
         """
+        chart_time = self._coerce_chart_time(time)
         marker_id = self.chart.marker(
-            time=time,
+            time=chart_time,
             position=position,
             shape=shape,
             color=color or self.drawing_color,
@@ -467,7 +552,7 @@ class ChartWidget(QWidget):
         self._drawings.append({
             "type": "marker",
             "id": marker_id,
-            "time": str(time),
+            "time": chart_time,
             "text": text,
             "position": position,
             "shape": shape,
@@ -484,25 +569,43 @@ class ChartWidget(QWidget):
         """
         self.chart.remove_marker(marker_id)
         self._drawings[:] = [d for d in self._drawings if d.get("id") != marker_id]
+        self._notify_drawings_changed()
 
     def clear_drawings(self) -> None:
         """Удаляет все рисунки и маркеры с графика."""
-        # Удаляем все объекты рисования через их delete()
         for drawing in self._drawings:
             drawing_type = drawing.get("type")
             obj = drawing.get("object")
             marker_id = drawing.get("id")
 
             if drawing_type == "marker" and marker_id:
-                self.chart.remove_marker(marker_id)
+                try:
+                    self.chart.remove_marker(marker_id)
+                except Exception as exc:
+                    logger.warning("Не удалось удалить маркер %s: %s", marker_id, exc)
             elif obj is not None and hasattr(obj, "delete"):
                 try:
                     obj.delete()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning("Не удалось удалить рисунок %s: %s", drawing_type, exc)
+
+        # Очищаем маркеры на стороне библиотеки (на случай рассинхрона)
+        try:
+            self.chart.clear_markers()
+        except Exception as exc:
+            logger.warning("clear_markers: %s", exc)
 
         self._drawings.clear()
         self._pending_point = None
+        self._notify_drawings_changed()
+
+        # Дополнительно сбрасываем маркеры в WebEngine
+        try:
+            self.webview.page().runJavaScript(
+                f"try {{ {self.chart.id}.series.setMarkers([]) }} catch(e) {{}}"
+            )
+        except Exception:
+            pass
 
     def delete_drawing(self, index: int) -> bool:
         """
@@ -530,6 +633,62 @@ class ChartWidget(QWidget):
             except Exception:
                 pass
 
+        self._notify_drawings_changed()
+        return True
+
+    def update_drawing(self, index: int, **kwargs) -> bool:
+        """
+        Обновляет свойства существующего рисунка (цвет, ширина, стиль).
+
+        Параметры:
+            index: Индекс рисунка в списке _drawings.
+            **kwargs: Свойства для обновления (color, width, style, text и т.д.).
+
+        Возвращает:
+            True, если рисунок обновлён.
+        """
+        if index < 0 or index >= len(self._drawings):
+            return False
+
+        drawing = self._drawings[index]
+        obj = drawing.get("object")
+        drawing_type = drawing.get("type")
+
+        if "color" in kwargs:
+            drawing["color"] = kwargs["color"]
+        if "text" in kwargs:
+            drawing["text"] = kwargs["text"]
+
+        # Маркер: текст меняется только пересозданием
+        if drawing_type == "marker" and "text" in kwargs:
+            marker_id = drawing.get("id")
+            if marker_id:
+                try:
+                    self.chart.remove_marker(marker_id)
+                except Exception:
+                    pass
+                new_id = self.chart.marker(
+                    time=drawing["time"],
+                    position=drawing.get("position", "below"),
+                    shape=drawing.get("shape", "arrow_up"),
+                    color=drawing.get("color", self.drawing_color),
+                    text=kwargs["text"],
+                )
+                drawing["id"] = new_id
+
+        if obj is not None and hasattr(obj, "options"):
+            try:
+                color = kwargs.get("color", drawing.get("color"))
+                style = kwargs.get("style", "solid")
+                width = kwargs.get("width", 2)
+                text = kwargs.get("text", drawing.get("text", ""))
+                obj.options(color=color, style=style, width=width)
+                if text and drawing_type in ("horizontal_line", "vertical_line", "ray_line"):
+                    obj.options(text=text)
+            except Exception:
+                pass
+
+        self._notify_drawings_changed()
         return True
 
     def get_drawings(self) -> list[dict[str, Any]]:
@@ -551,10 +710,6 @@ class ChartWidget(QWidget):
         serialized = []
         for d in self._drawings:
             entry = {k: v for k, v in d.items() if k != "object"}
-            # Дату/время превращаем в строку для сериализации
-            for key in ("time", "start_time", "end_time"):
-                if key in entry and not isinstance(entry[key], str):
-                    entry[key] = str(entry[key])
             serialized.append(entry)
         return serialized
 
@@ -574,105 +729,172 @@ class ChartWidget(QWidget):
 
             try:
                 if drawing_type == "horizontal_line":
-                    self.add_horizontal_line(price=float(d["price"]), color=color)
+                    self.add_horizontal_line(
+                        price=float(d["price"]),
+                        color=color,
+                        text=d.get("text", ""),
+                    )
                 elif drawing_type == "vertical_line":
-                    self.add_vertical_line(time=d["time"], color=color)
+                    self.add_vertical_line(
+                        time=self._coerce_chart_time(d["time"]),
+                        color=color,
+                        text=d.get("text", ""),
+                    )
                 elif drawing_type == "trend_line":
                     self.add_trend_line(
-                        start_time=d["start_time"], start_value=float(d["start_value"]),
-                        end_time=d["end_time"], end_value=float(d["end_value"]),
+                        start_time=self._coerce_chart_time(d["start_time"]),
+                        start_value=float(d["start_value"]),
+                        end_time=self._coerce_chart_time(d["end_time"]),
+                        end_value=float(d["end_value"]),
                         color=color,
                     )
                 elif drawing_type == "ray_line":
                     self.add_ray_line(
-                        start_time=d["start_time"], value=float(d["value"]), color=color,
+                        start_time=self._coerce_chart_time(d["start_time"]),
+                        value=float(d["value"]),
+                        color=color,
+                        text=d.get("text", ""),
                     )
                 elif drawing_type == "vertical_span":
                     self.add_vertical_span(
-                        start_time=d["start_time"], end_time=d["end_time"], color=color,
+                        start_time=self._coerce_chart_time(d["start_time"]),
+                        end_time=self._coerce_chart_time(d["end_time"]),
+                        start_value=d.get("start_value"),
+                        end_value=d.get("end_value"),
+                        color=color,
                     )
                 elif drawing_type == "marker":
                     self.add_marker(
-                        time=d["time"],
+                        time=self._coerce_chart_time(d["time"]),
                         text=d.get("text", ""),
                         position=d.get("position", "below"),
                         shape=d.get("shape", "arrow_up"),
                         color=color,
                     )
-            except (KeyError, ValueError, TypeError) as exc:
+            except (KeyError, ValueError, TypeError, OSError) as exc:
                 logger.warning("Не удалось восстановить рисунок %s: %s", drawing_type, exc)
+
+        self._notify_drawings_changed()
+
+    def _notify_drawings_changed(self) -> None:
+        """Уведомляет подписчиков об изменении списка рисунков."""
+        if self.on_drawings_changed is not None:
+            self.on_drawings_changed()
 
     # ──────────────────────────────────────────────
     # Обработка кликов для интерактивного рисования
     # ──────────────────────────────────────────────
 
-    def _on_click(self, callback: Callable[[datetime | None, float | None], None]) -> None:
+    def _snap_chart_time(self, raw_time: float | datetime | str) -> float:
+        """
+        Приводит время к формату шкалы графика (как у свечей lightweight-charts).
+
+        coordinateToTime возвращает unix-время; библиотека выравнивает его
+        по интервалу свечей через _single_datetime_format.
+        """
+        return self.chart._single_datetime_format(raw_time)
+
+    def _on_click(self, callback: Callable[[float | None, float | None], None]) -> None:
         """
         Подписывается на событие клика по графику.
 
         Параметры:
-            callback: Функция вида callback(time, price).
+            callback: Функция вида callback(chart_time, price).
+                      chart_time — число в формате шкалы графика (не datetime).
         """
         def handler(chart, time: float | None, price: float | None) -> None:
-            parsed_time: datetime | None = None
-            if time is not None and time > 0:
-                try:
-                    parsed_time = datetime.fromtimestamp(time)
-                except (OSError, ValueError):
-                    parsed_time = None
-            callback(parsed_time, price)
+            # Передаём время как есть: fromtimestamp ломает привязку к свечам
+            callback(time, price)
 
         self.chart.events.click += handler
 
     def _handle_chart_click(
-        self, time: datetime | None, price: float | None
+        self,
+        time: float | datetime | None,
+        price: float | None,
     ) -> None:
         """
         Обрабатывает клик по графику для активного инструмента рисования.
 
         Параметры:
-            time: Время клика (datetime или None).
+            time: Время клика (float с графика или datetime в тестах).
             price: Цена клика (float или None).
         """
+        # Режим курсора: выбор и перемещение объектов через toolbox графика
         if self.active_tool == "none":
             return
-        if time is None or price is None:
+
+        label = self.drawing_text
+        chart_time: float | None = None
+        if time is not None:
+            try:
+                if isinstance(time, (int, float)) and time > 0:
+                    chart_time = self._snap_chart_time(float(time))
+                elif isinstance(time, datetime):
+                    chart_time = self._snap_chart_time(time)
+            except (TypeError, ValueError, OSError) as exc:
+                logger.warning("Не удалось разобрать время клика: %s", exc)
+
+        if chart_time is None:
+            return
+
+        # Для инструментов только по времени цена может отсутствовать
+        if price is None and self.active_tool not in (
+            "vertical_line", "marker", "vertical_span",
+        ):
             return
 
         tool = self.active_tool
 
-        if tool == "horizontal_line":
-            self.add_horizontal_line(price=price)
+        try:
+            if tool == "horizontal_line":
+                self.add_horizontal_line(price=price, text=label)
 
-        elif tool == "vertical_line":
-            self.add_vertical_line(time=time)
+            elif tool == "vertical_line":
+                self.add_vertical_line(time=chart_time, text=label)
 
-        elif tool == "marker":
-            self.add_marker(time=time, text="", position="below", shape="arrow_up")
-
-        elif tool == "ray_line":
-            self.add_ray_line(start_time=time, value=price)
-
-        elif tool == "vertical_span":
-            if self._pending_point is None:
-                self._pending_point = (time, price)
-            else:
-                start_time, _ = self._pending_point
-                self.add_vertical_span(start_time=start_time, end_time=time)
-                self._pending_point = None
-
-        elif tool == "trend_line":
-            if self._pending_point is None:
-                # Первый клик — запоминаем начальную точку
-                self._pending_point = (time, price)
-            else:
-                # Второй клик — рисуем линию от первой точки до второй
-                start_time, start_price = self._pending_point
-                self.add_trend_line(
-                    start_time=start_time, start_value=start_price,
-                    end_time=time, end_value=price,
+            elif tool == "marker":
+                self.add_marker(
+                    time=chart_time,
+                    text=label or "●",
+                    position="below",
+                    shape="arrow_up",
                 )
-                self._pending_point = None
+
+            elif tool == "ray_line":
+                self.add_ray_line(start_time=chart_time, value=price, text=label)
+
+            elif tool == "vertical_span":
+                if self._pending_point is None:
+                    self._pending_point = (chart_time, price)
+                else:
+                    start_time, start_price = self._pending_point
+                    self.add_vertical_span(
+                        start_time=start_time,
+                        end_time=chart_time,
+                        start_value=start_price,
+                        end_value=price,
+                    )
+                    self._pending_point = None
+
+            elif tool == "trend_line":
+                if self._pending_point is None:
+                    self._pending_point = (chart_time, price)
+                else:
+                    start_time, start_price = self._pending_point
+                    self.add_trend_line(
+                        start_time=start_time,
+                        start_value=start_price,
+                        end_time=chart_time,
+                        end_value=price,
+                    )
+                    self._pending_point = None
+
+            self._notify_drawings_changed()
+        except Exception as exc:
+            logger.warning(
+                "Ошибка рисования инструментом %s: %s", tool, exc,
+            )
 
     # ══════════════════════════════════════════════
     # Управление индикаторами
@@ -823,12 +1045,9 @@ class ChartWidget(QWidget):
                     df = df.rename(columns={col: "time"})
                     break
 
-        # Форматируем время
+        # Форматируем время: lightweight-charts сам конвертирует datetime
         if "time" in df.columns and hasattr(df["time"], "dtype"):
             if str(df["time"].dtype) == "datetime64[ns]":
                 df["time"] = df["time"].dt.strftime("%Y-%m-%dT%H:%M:%S")
-            elif df["time"].dtype == "object":
-                # Если это строка — пробуем оставить как есть
-                pass
 
         return df

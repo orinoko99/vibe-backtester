@@ -1,19 +1,20 @@
 """
-Панель инструментов рисования на графике.
+Панель списка рисунков и действий над ними (без кнопок инструментов рисования).
 
-Содержит кнопки для выбора инструментов рисования:
-горизонтальная линия, вертикальная линия, трендовая линия,
-луч, вертикальная заливка, маркер, а также выбор цвета.
+Инструменты рисования и курсор — на главной панели над графиком (ChartDrawingToolbar).
 """
 
 from PySide6.QtCore import Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QColorDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QInputDialog,
+    QListWidget,
+    QListWidgetItem,
     QPushButton,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -21,157 +22,132 @@ from PySide6.QtWidgets import (
 
 class DrawingToolbar(QWidget):
     """
-    Панель инструментов рисования.
-
-    Позволяет выбирать инструмент рисования (линия, маркер и т.д.),
-    цвет линий и очищать все рисунки.
+    Список рисунков на графике и кнопки управления ими.
 
     Сигналы:
-        tool_selected(str): Выбран инструмент ('horizontal_line', 'vertical_line',
-            'trend_line', 'ray_line', 'vertical_span', 'marker', 'none').
-        color_selected(str): Выбран цвет в HEX-формате.
-        clear_requested(): Запрос на очистку всех рисунков.
+        clear_requested(): Очистить все рисунки.
+        delete_last_requested(): Удалить последний.
+        delete_drawing_requested(int): Удалить по индексу.
+        edit_drawing_requested(int, str): Изменить цвет.
+        edit_drawing_text_requested(int, str): Изменить текст подписи.
     """
 
-    tool_selected = Signal(str)
-    color_selected = Signal(str)
     clear_requested = Signal()
     delete_last_requested = Signal()
+    delete_drawing_requested = Signal(int)
+    edit_drawing_requested = Signal(int, str)
+    edit_drawing_text_requested = Signal(int, str)
+
+    TYPE_NAMES: dict[str, str] = {
+        "horizontal_line": "Гориз. линия",
+        "vertical_line": "Вертик. линия",
+        "trend_line": "Тренд. линия",
+        "ray_line": "Луч",
+        "vertical_span": "Заливка",
+        "marker": "Маркер",
+    }
 
     def __init__(self, parent: QWidget = None) -> None:
-        """
-        Инициализирует панель инструментов рисования.
-
-        Параметры:
-            parent: Родительский виджет.
-        """
         super().__init__(parent)
-
-        # Текущие настройки
-        self._current_color: str = "#1E80F0"
-        self._active_tool: str = "none"
-
-        # Создаём интерфейс
         self._setup_ui()
 
     def _setup_ui(self) -> None:
-        """Создаёт элементы интерфейса панели."""
         layout = QVBoxLayout()
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
 
-        # Заголовок панели
-        title_label = QLabel("Рисование")
+        title_label = QLabel("Рисунки")
         title_label.setStyleSheet("font-weight: bold; font-size: 14px;")
         layout.addWidget(title_label)
 
-        # Контейнер для кнопок инструментов
-        tools_layout = QVBoxLayout()
-        tools_layout.setSpacing(2)
+        self.delete_last_button = QPushButton("Удалить последний")
+        self.delete_last_button.clicked.connect(self.delete_last_requested.emit)
+        layout.addWidget(self.delete_last_button)
 
-        # Определяем инструменты: (метка, подсказка)
-        tools: list[tuple[str, str, str]] = [
-            ("cursor", "Указатель", "none"),
-            ("━ H", "Горизонтальная линия", "horizontal_line"),
-            ("┃ V", "Вертикальная линия", "vertical_line"),
-            ("╱ T", "Трендовая линия", "trend_line"),
-            ("╱ R", "Луч", "ray_line"),
-            ("▣ S", "Вертикальная заливка", "vertical_span"),
-            ("● M", "Маркер", "marker"),
-        ]
+        self.clear_button = QPushButton("Очистить всё")
+        self.clear_button.clicked.connect(self.clear_requested.emit)
+        layout.addWidget(self.clear_button)
 
-        self._tool_buttons: dict[str, QToolButton] = {}
-
-        for label_text, tooltip, tool_name in tools:
-            btn = QToolButton()
-            btn.setText(label_text)
-            btn.setToolTip(tooltip)
-            btn.setCheckable(True)
-            btn.setChecked(tool_name == self._active_tool)
-            btn.setMinimumWidth(60)
-            btn.clicked.connect(lambda checked, t=tool_name: self._on_tool_clicked(t))
-            tools_layout.addWidget(btn)
-            self._tool_buttons[tool_name] = btn
-
-        # Кнопка выбора цвета
-        color_layout = QHBoxLayout()
-        color_label = QLabel("Цвет:")
-        self.color_button = QPushButton()
-        self.color_button.setFixedSize(28, 28)
-        self.color_button.setStyleSheet(
-            f"background-color: {self._current_color}; border: 1px solid #555; border-radius: 4px;"
-        )
-        self.color_button.setToolTip("Выбрать цвет")
-        self.color_button.clicked.connect(self._on_color_clicked)
-        color_layout.addWidget(color_label)
-        color_layout.addWidget(self.color_button)
-        color_layout.addStretch()
-        tools_layout.addLayout(color_layout)
-
-        # Разделитель
         separator = QFrame()
         separator.setFrameShape(QFrame.Shape.HLine)
-        separator.setFrameShadow(QFrame.Shadow.Sunken)
-        tools_layout.addWidget(separator)
+        layout.addWidget(separator)
 
-        # Кнопка удаления последнего рисунка
-        self.delete_last_button = QPushButton("Удалить последний")
-        self.delete_last_button.setToolTip("Удалить последний добавленный рисунок")
-        self.delete_last_button.clicked.connect(self.delete_last_requested.emit)
-        tools_layout.addWidget(self.delete_last_button)
+        self.drawing_list = QListWidget()
+        self.drawing_list.setAlternatingRowColors(True)
+        self.drawing_list.setMinimumHeight(120)
+        self.drawing_list.itemDoubleClicked.connect(self._on_drawing_double_clicked)
+        layout.addWidget(self.drawing_list)
 
-        # Кнопка очистки всех рисунков
-        self.clear_button = QPushButton("Очистить всё")
-        self.clear_button.setToolTip("Удалить все рисунки и маркеры с графика")
-        self.clear_button.clicked.connect(self.clear_requested.emit)
-        tools_layout.addWidget(self.clear_button)
+        item_actions = QHBoxLayout()
 
-        layout.addLayout(tools_layout)
+        self.edit_text_button = QPushButton("Текст")
+        self.edit_text_button.setToolTip("Изменить подпись выбранного рисунка")
+        self.edit_text_button.clicked.connect(self._on_edit_text_clicked)
+        item_actions.addWidget(self.edit_text_button)
+
+        self.edit_color_button = QPushButton("Цвет")
+        self.edit_color_button.clicked.connect(self._on_edit_color_clicked)
+        item_actions.addWidget(self.edit_color_button)
+
+        self.delete_selected_button = QPushButton("Удалить")
+        self.delete_selected_button.clicked.connect(self._on_delete_selected_clicked)
+        item_actions.addWidget(self.delete_selected_button)
+
+        layout.addLayout(item_actions)
         layout.addStretch()
         self.setLayout(layout)
 
-    def _on_tool_clicked(self, tool_name: str) -> None:
-        """
-        Обрабатывает выбор инструмента рисования.
+    def update_drawing_list(self, drawings: list[dict]) -> None:
+        """Обновляет список рисунков."""
+        self.drawing_list.clear()
+        for i, d in enumerate(drawings):
+            dtype = d.get("type", "unknown")
+            color = d.get("color", "#888")
+            display_name = self.TYPE_NAMES.get(dtype, dtype)
+            label = d.get("text", "") or ""
 
-        Переключает состояние кнопок: выбранная становится активной,
-        остальные сбрасываются.
+            details = ""
+            if dtype == "horizontal_line":
+                details = f" @ {d.get('price', '')}"
+            elif dtype == "vertical_line":
+                details = f" t={d.get('time', '')}"
+            elif dtype == "trend_line":
+                details = f" {d.get('start_value', '')}→{d.get('end_value', '')}"
+            if label:
+                details += f' «{label}»'
 
-        Параметры:
-            tool_name: Имя выбранного инструмента.
-        """
-        self._active_tool = tool_name
+            item = QListWidgetItem(f"{display_name}{details}")
+            item.setData(256, i)
+            item.setForeground(QColor(color))
+            self.drawing_list.addItem(item)
 
-        # Обновляем состояние всех кнопок
-        for name, btn in self._tool_buttons.items():
-            btn.setChecked(name == tool_name)
+    def _on_drawing_double_clicked(self, _item: QListWidgetItem) -> None:
+        self._on_edit_text_clicked()
 
-        self.tool_selected.emit(tool_name)
-
-    def _on_color_clicked(self) -> None:
-        """Открывает диалог выбора цвета и применяет выбранный цвет."""
+    def _on_edit_color_clicked(self) -> None:
+        current = self.drawing_list.currentItem()
+        if current is None:
+            return
+        index = current.data(256)
         color = QColorDialog.getColor()
-        if color.isValid():
-            self._current_color = color.name()
-            self.color_button.setStyleSheet(
-                f"background-color: {self._current_color}; border: 1px solid #555; border-radius: 4px;"
-            )
-            self.color_selected.emit(self._current_color)
+        if color.isValid() and index is not None:
+            self.edit_drawing_requested.emit(index, color.name())
 
-    def set_active_tool(self, tool_name: str) -> None:
-        """
-        Программно устанавливает активный инструмент.
+    def _on_edit_text_clicked(self) -> None:
+        current = self.drawing_list.currentItem()
+        if current is None:
+            return
+        index = current.data(256)
+        if index is None:
+            return
+        text, ok = QInputDialog.getText(self, "Подпись", "Текст на рисунке:")
+        if ok:
+            self.edit_drawing_text_requested.emit(index, text)
 
-        Параметры:
-            tool_name: Имя инструмента.
-        """
-        self._on_tool_clicked(tool_name)
-
-    def current_color(self) -> str:
-        """
-        Возвращает текущий выбранный цвет.
-
-        Возвращает:
-            Цвет в HEX-формате (например '#1E80F0').
-        """
-        return self._current_color
+    def _on_delete_selected_clicked(self) -> None:
+        current = self.drawing_list.currentItem()
+        if current is None:
+            return
+        index = current.data(256)
+        if index is not None:
+            self.delete_drawing_requested.emit(index)

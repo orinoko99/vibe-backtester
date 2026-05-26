@@ -322,10 +322,13 @@ def test_add_ray_line(chart_widget: ChartWidget) -> None:
     assert chart_widget._drawings[0]["value"] == 100.0
 
 
-def test_add_vertical_span(chart_widget: ChartWidget) -> None:
+def test_add_vertical_span(
+    chart_widget: ChartWidget, sample_candles: pl.DataFrame,
+) -> None:
     """
-    Проверяет добавление вертикальной заливки.
+    Проверяет добавление вертикальной заливки (через box, не vertical_span библиотеки).
     """
+    chart_widget.load_candles(sample_candles)
     span = chart_widget.add_vertical_span(
         start_time=datetime(2025, 10, 28, 9, 0),
         end_time=datetime(2025, 10, 28, 9, 4),
@@ -333,6 +336,30 @@ def test_add_vertical_span(chart_widget: ChartWidget) -> None:
     assert span is not None
     assert len(chart_widget._drawings) == 1
     assert chart_widget._drawings[0]["type"] == "vertical_span"
+    assert "start_value" in chart_widget._drawings[0]
+
+
+def test_coerce_chart_time_from_string_float(chart_widget: ChartWidget) -> None:
+    """Восстановление времени из строки '1740.0' (формат шкалы графика)."""
+    chart_widget.load_candles(pl.DataFrame({
+        "date": [datetime(2025, 10, 28, 9, 0)],
+        "open": [100.0], "high": [105.0], "low": [99.0], "close": [102.0],
+    }))
+    t = chart_widget._coerce_chart_time("1740.0")
+    assert isinstance(t, float)
+
+
+def test_restore_drawings_chart_time_float(
+    chart_widget: ChartWidget, sample_candles: pl.DataFrame,
+) -> None:
+    """Восстановление vertical_line с числовым временем шкалы."""
+    chart_widget.load_candles(sample_candles)
+    t = chart_widget._snap_chart_time(datetime(2025, 10, 28, 9, 0))
+    chart_widget.restore_drawings([
+        {"type": "vertical_line", "time": t, "color": "#FF0000"},
+    ])
+    assert len(chart_widget._drawings) == 1
+    assert chart_widget._drawings[0]["type"] == "vertical_line"
 
 
 def test_add_marker(chart_widget: ChartWidget) -> None:
@@ -559,6 +586,151 @@ def test_set_drawing_tool_resets_pending(chart_widget: ChartWidget) -> None:
     # Смена инструмента сбрасывает ожидание
     chart_widget.set_drawing_tool("horizontal_line")
     assert chart_widget._pending_point is None
+
+
+def test_handle_chart_click_with_none_price_for_vertical_line(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет, что vertical_line работает с price=None.
+    """
+    chart_widget.set_drawing_tool("vertical_line")
+    chart_widget._handle_chart_click(
+        time=datetime(2025, 10, 28, 9, 0), price=None
+    )
+    assert len(chart_widget._drawings) == 1
+    assert chart_widget._drawings[0]["type"] == "vertical_line"
+
+
+def test_handle_chart_click_with_none_price_for_marker(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет, что marker работает с price=None.
+    """
+    chart_widget.set_drawing_tool("marker")
+    chart_widget._handle_chart_click(
+        time=datetime(2025, 10, 28, 9, 0), price=None
+    )
+    assert len(chart_widget._drawings) == 1
+    assert chart_widget._drawings[0]["type"] == "marker"
+
+
+def test_handle_chart_click_with_none_price_for_vertical_span(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет, что vertical_span работает с price=None.
+    """
+    chart_widget.set_drawing_tool("vertical_span")
+    chart_widget._handle_chart_click(
+        time=datetime(2025, 10, 28, 9, 0), price=None
+    )
+    assert chart_widget._pending_point is not None
+    # Второй клик с price=None
+    chart_widget._handle_chart_click(
+        time=datetime(2025, 10, 28, 9, 4), price=None
+    )
+    assert chart_widget._pending_point is None
+    assert len(chart_widget._drawings) == 1
+    assert chart_widget._drawings[0]["type"] == "vertical_span"
+
+
+def test_handle_chart_click_with_none_price_rejected_for_horizontal(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет, что horizontal_line отклоняет click с price=None.
+    """
+    chart_widget.set_drawing_tool("horizontal_line")
+    chart_widget._handle_chart_click(
+        time=datetime(2025, 10, 28, 9, 0), price=None
+    )
+    assert len(chart_widget._drawings) == 0
+
+
+def test_handle_chart_click_with_chart_time_float(
+    chart_widget: ChartWidget, sample_candles: pl.DataFrame,
+) -> None:
+    """
+    Проверяет клик с временем в формате шкалы графика (как от coordinateToTime).
+    """
+    chart_widget.load_candles(sample_candles)
+    chart_time = chart_widget._snap_chart_time(datetime(2025, 10, 28, 9, 0))
+
+    chart_widget.set_drawing_tool("vertical_line")
+    chart_widget._handle_chart_click(time=chart_time, price=100.0)
+    assert len(chart_widget._drawings) == 1
+    assert chart_widget._drawings[0]["type"] == "vertical_line"
+
+
+# ──────────────────────────────────────────────
+# Тесты для update_drawing
+# ──────────────────────────────────────────────
+
+
+def test_update_drawing_changes_color(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет изменение цвета существующего рисунка.
+    """
+    chart_widget.add_horizontal_line(price=100.0, color="#FF0000")
+    assert chart_widget._drawings[0]["color"] == "#FF0000"
+    result = chart_widget.update_drawing(0, color="#00FF00")
+    assert result is True
+    assert chart_widget._drawings[0]["color"] == "#00FF00"
+
+
+def test_update_drawing_invalid_index(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет, что update_drawing с неверным индексом возвращает False.
+    """
+    result = chart_widget.update_drawing(0, color="#FF0000")
+    assert result is False
+    result = chart_widget.update_drawing(-1, color="#FF0000")
+    assert result is False
+
+
+# ──────────────────────────────────────────────
+# Тесты для on_drawings_changed callback
+# ──────────────────────────────────────────────
+
+
+def test_on_drawings_changed_called_on_add(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет, что on_drawings_changed вызывается при добавлении рисунка.
+    """
+    calls = []
+    chart_widget.on_drawings_changed = lambda: calls.append(1)
+    chart_widget.add_horizontal_line(price=100.0)
+    chart_widget.add_horizontal_line(price=200.0)
+    assert len(calls) == 0  # Прямые вызовы add_* не триггерят колбэк
+
+
+def test_on_drawings_changed_called_on_click(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет, что on_drawings_changed вызывается при клике с активным инструментом.
+    """
+    calls = []
+    chart_widget.on_drawings_changed = lambda: calls.append(1)
+    chart_widget.set_drawing_tool("horizontal_line")
+    chart_widget._handle_chart_click(
+        time=datetime(2025, 10, 28, 9, 0), price=100.0
+    )
+    assert len(calls) == 1
+
+
+def test_on_drawings_changed_called_on_clear(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет, что on_drawings_changed вызывается при очистке.
+    """
+    calls = []
+    chart_widget.add_horizontal_line(price=100.0)
+    chart_widget.on_drawings_changed = lambda: calls.append(1)
+    chart_widget.clear_drawings()
+    assert len(calls) == 1
+
+
+def test_on_drawings_changed_called_on_delete_last(chart_widget: ChartWidget) -> None:
+    """
+    Проверяет, что on_drawings_changed вызывается при удалении последнего.
+    """
+    calls = []
+    chart_widget.add_horizontal_line(price=100.0)
+    chart_widget.on_drawings_changed = lambda: calls.append(1)
+    chart_widget.delete_drawing(0)
+    assert len(calls) == 1
 
 
 # ══════════════════════════════════════════════

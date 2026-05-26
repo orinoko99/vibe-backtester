@@ -1,23 +1,22 @@
 {
-  "current_task": null,
-  "plan": [],
-  "step_index": 0,
-  "mode": "PLANNER",
-  "status": "idle",
-  "attempts": 0,
-  "tests": {
-    "written": true,
-    "last_result": "pass"
-  },
-  "review": {
-    "done": true
-  },
+  "current_task": "Исправление zoom (сброс видимого диапазона при подгрузке данных)",
+  "mode": "LOGGER",
+  "status": "done",
+  "plan": [
+    "Анализ проблемы: chart.set() после подгрузки M1 сбрасывает zoom",
+    "main_window.py: _save_visible_range_from_cache — сохранять границы видимой области",
+    "main_window.py: _on_chart_range_change — сохранять границы + флаг _restoring_range",
+    "main_window.py: _refresh_chart_display — восстанавливать zoom после chart.set()",
+    "main_window.py: сброс saved_visible при загрузке нового инструмента",
+    "Тесты: проверка сохранения и восстановления visible range",
+    "error_log.md / completed_tasks.md / state.json обновлены"
+  ],
+  "step_index": 7,
+  "tests": { "written": true, "last_result": "pass" },
+  "review": { "done": true },
   "logging": {
     "bugs_recorded": true,
     "fixes_recorded": true
   },
-  "git": {
-    "committed": true,
-    "pushed": true
-  }
+  "git": { "committed": false, "pushed": false }
 }

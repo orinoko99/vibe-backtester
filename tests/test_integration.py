@@ -104,9 +104,8 @@ def test_load_and_display_updates_status(main_window: MainWindow, temp_db_with_d
     """
     main_window.load_and_display(temp_db_with_data, "TEST")
     status_text = main_window.statusBar().currentMessage()
-    assert "Загружено" in status_text
     assert "TEST" in status_text
-    assert "20" in status_text  # 20 свечей
+    assert "20" in status_text  # 20 свечей загружено в кэш
 
 
 def test_load_and_display_with_date_filter(main_window: MainWindow, temp_db_with_data: str) -> None:
@@ -119,8 +118,8 @@ def test_load_and_display_with_date_filter(main_window: MainWindow, temp_db_with
         end_date="2025-10-28 09:10:00",
     )
     status_text = main_window.statusBar().currentMessage()
-    # Должно загрузиться 6 свечей (с 5 по 10)
-    assert "6" in status_text
+    # Должно загрузиться 6 свечей (с 5 по 10) -> "в памяти 6"
+    assert "в памяти 6" in status_text
 
 
 def test_load_and_display_file_not_found(main_window: MainWindow) -> None:
@@ -166,7 +165,7 @@ def test_load_and_display_empty_data(main_window: MainWindow, tmp_path: Path) ->
 
     main_window.load_and_display(str(db_file), "EMPTY")
     status_text = main_window.statusBar().currentMessage()
-    assert "Нет данных" in status_text
+    assert "Нет минутных данных" in status_text
 
 
 def test_loader_and_chart_data_consistency(main_window: MainWindow, temp_db_with_data: str) -> None:

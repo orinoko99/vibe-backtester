@@ -1,11 +1,17 @@
 {
-  "task_id": "Этап_2.3",
+  "task_id": "zoom_fix",
   "tests_written": true,
   "last_run_result": "pass",
-  "total_tests": 330,
-  "files": [
-    "tests/test_indicators.py (94 теста)",
-    "tests/test_indicators_panel.py (18 тестов)",
-    "tests/test_chart_widget.py (54 теста, включая интеграцию индикаторов)"
+  "total_tests": 356,
+  "python": "venv/Scripts/python.exe",
+  "new_tests": [
+    "test_save_visible_range_from_cache_empty",
+    "test_save_visible_range_from_cache_center",
+    "test_save_visible_range_from_cache_clamped",
+    "test_on_range_change_saves_visible_range",
+    "test_on_range_change_skipped_when_restoring",
+    "test_refresh_chart_display_restores_range",
+    "test_refresh_chart_display_skips_restore_on_scroll_to_end",
+    "test_refresh_chart_display_skips_restore_on_fit"
   ]
 }

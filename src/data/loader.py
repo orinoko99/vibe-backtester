@@ -152,6 +152,69 @@ def load_candles(
     return df
 
 
+def load_candles_tail(
+    db_path: str,
+    sec_code: str,
+    limit: int = 25_000,
+    timeframe: str = "M1",
+) -> pl.DataFrame:
+    """
+    Загружает последние N свечей инструмента (для стартового окна графика).
+
+    Параметры:
+        db_path: Путь к SQLite.
+        sec_code: Код инструмента.
+        limit: Сколько последних строк взять из таблицы.
+        timeframe: Таймфрейм таблицы (в БД — M1).
+
+    Возвращает:
+        DataFrame, отсортированный по date по возрастанию.
+    """
+    db_file = Path(db_path)
+    if not db_file.exists():
+        raise FileNotFoundError(f"Файл базы данных не найден: {db_path}")
+
+    table_name = f"{sec_code}_{timeframe}"
+    query = f"""
+        SELECT
+            "ID" AS id,
+            "Date" AS date,
+            "SecCode" AS sec_code,
+            "ClassCode" AS class_code,
+            CAST("O" AS REAL) AS open,
+            CAST("H" AS REAL) AS high,
+            CAST("L" AS REAL) AS low,
+            CAST("C" AS REAL) AS close,
+            "V" AS volume,
+            "OpenInterest" AS open_interest
+        FROM "{table_name}"
+        ORDER BY "Date" DESC
+        LIMIT ?
+    """
+
+    with sqlite3.connect(str(db_file)) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (table_name,),
+        )
+        if cursor.fetchone() is None:
+            raise ValueError(
+                f"Таблица '{table_name}' не найдена в базе '{db_path}'."
+            )
+        df = pl.read_database(
+            query, connection=conn, execute_options={"parameters": [limit]},
+        )
+
+    if df.is_empty():
+        return df
+
+    df = df.with_columns(
+        pl.col("date").str.to_datetime("%Y-%m-%d %H:%M:%S"),
+    )
+    return df.sort("date")
+
+
 def get_available_instruments(
     futures_paths: Optional[list[str]] = None,
     shares_paths: Optional[list[str]] = None,
